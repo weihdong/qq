@@ -109,7 +109,7 @@ export default {
     },
 
     connectWebSocket() {
-      this.ws = new WebSocket('ws://localhost:3000');
+      this.ws = new WebSocket('wss://qq-backend-production.up.railway.app');
 
       this.ws.onopen = () => {
         this.ws.send(JSON.stringify({
