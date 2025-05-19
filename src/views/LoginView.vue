@@ -55,6 +55,13 @@
           password: password.value
         },
         {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'  // 新增此行
+    },
+    withCredentials: true  // 强制携带凭证
+        },
+        {
           timeout: 20000 // 5秒超时
         }
       )
