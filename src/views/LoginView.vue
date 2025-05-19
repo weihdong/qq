@@ -55,7 +55,7 @@
           password: password.value
         },
         {
-          timeout: 5000 // 5秒超时
+          timeout: 20000 // 5秒超时
         }
       )
   
