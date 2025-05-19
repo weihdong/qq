@@ -85,7 +85,7 @@
   // 获取基础URL
   const getBaseURL = () => {
     return window.location.hostname.includes('085410.xyz') 
-      ? 'https://qq-backend-production.up.railway.app'
+      ? 'https://web-production-5fc08.up.railway.app'
       : 'http://localhost:3000'
   }
   
