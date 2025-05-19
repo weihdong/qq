@@ -36,56 +36,63 @@
   const getBaseURL = () => import.meta.env.VITE_API_BASE_URL
   
   const login = async () => {
-    try {
-      // 基础验证
-      if (!username.value.trim() || !password.value.trim()) {
-        alert('用户名和密码不能为空')
-        return
-      }
-  
-      const response = await axios.post(
-        `${getBaseURL()}/api/login`,
-        {
-          username: username.value,
-          password: password.value
-        },
-        {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest'  // 新增此行
-    },
-    withCredentials: true  // 强制携带凭证
-        },
-        {
-          timeout: 20000 // 5秒超时
-        }
-      )
-  
-      // 存储用户信息
-      localStorage.setItem('userId', response.data.userId)
-      localStorage.setItem('username', username.value)
-      
-      // 跳转到聊天界面
-      router.push('/chat')
-      
-    } catch (error) {
-      let errorMessage = '登录失败，请检查网络连接'
-      
-      if (error.response) {
-        // 服务器返回的错误
-        errorMessage = error.response.data?.error || `服务器错误 (${error.response.status})`
-      } else if (error.request) {
-        // 请求已发出但没有响应
-        errorMessage = '无法连接到服务器'
-      } else {
-        // 其他错误
-        errorMessage = error.message
-      }
-      
-      alert(errorMessage)
-      console.error('登录错误详情:', error)
+  try {
+    // 输入验证增强
+    const trimmedUsername = username.value.trim()
+    const trimmedPassword = password.value.trim()
+    if (!trimmedUsername || !trimmedPassword) {
+      return alert('用户名和密码不能为空')
     }
+
+    // 使用环境变量替代动态判断
+    const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/api/login`
+
+    const response = await axios.post(
+      apiUrl,
+      {
+        username: trimmedUsername,
+        password: trimmedPassword
+      },
+      {
+        // 合并配置项
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Version': 'web-1.0.1' // 更实用的自定义头
+        },
+        withCredentials: true,
+        timeout: 10000, // 调整为10秒（更合理的超时时间）
+        validateStatus: (status) => status < 500 // 接受500以下的状态码
+      }
+    )
+
+    // 安全存储（建议后续改用更安全的存储方式）
+    if (response.data?.userId) {
+      localStorage.setItem('userId', response.data.userId)
+      localStorage.setItem('username', trimmedUsername)
+      router.push('/chat')
+    } else {
+      throw new Error('无效的服务器响应')
+    }
+
+  } catch (error) {
+    // 增强错误处理
+    const errorMessage = axios.isCancel(error) 
+      ? '请求超时，请检查网络连接'
+      : error.response?.data?.error 
+        ? `服务器错误：${error.response.data.error}`
+        : error.request
+          ? '无法连接到服务器'
+          : '发生未知错误'
+
+    console.error('[登录失败]', {
+      error,
+      input: { username: username.value, password: '***' },
+      time: new Date().toISOString()
+    })
+    
+    alert(`登录失败：${errorMessage}`)
   }
+}
   </script>
   
 <style scoped>
