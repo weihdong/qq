@@ -2,11 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 
-const getBaseURL = () => {
-  return window.location.hostname.includes('085410.xyz') 
-    ? 'https://qq-backend-production.up.railway.app'
-    : 'http://localhost:3000'
-}
+const getBaseURL = () => import.meta.env.VITE_API_BASE_URL
 
 export const useChatStore = defineStore('chat', () => {
   // 状态
@@ -22,12 +18,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // 方法
   const connectWebSocket = (userId) => {
-    const WS_URL = window.location.hostname.includes('085410.xyz') 
-      ? 'wss://qq-backend-production.up.railway.app'
-      : 'ws://localhost:3000'
+    const WS_URL = import.meta.env.VITE_WS_URL
 
     const pingInterval = 25000;
-    socket.value = new WebSocket(`$${WS_URL}?userId=$${userId}`)
+    socket.value = new WebSocket(`${WS_URL}?userId=${userId}`)
     socket.value.error = (error) => {
         console.error('WebSocket错误:', error);
         setTimeout(() => connectWebSocket(userId), 3000);

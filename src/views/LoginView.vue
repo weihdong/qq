@@ -33,12 +33,7 @@
   const password = ref('')
   
   // 动态判断接口地址
-  const getBaseURL = () => {
-    const isProduction = window.location.hostname.includes('085410.xyz')
-    return isProduction 
-      ? 'https://web-production-5fc08.up.railway.app'
-      : 'http://localhost:3000'
-  }
+  const getBaseURL = () => import.meta.env.VITE_API_BASE_URL
   
   const login = async () => {
     try {
