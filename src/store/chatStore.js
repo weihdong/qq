@@ -26,8 +26,12 @@ export const useChatStore = defineStore('chat', () => {
       ? 'wss://qq-backend-production.up.railway.app'
       : 'ws://localhost:3000'
 
-    socket.value = new WebSocket(`${WS_URL}?userId=${userId}`)
-
+    const pingInterval = 25000;
+    socket.value = new WebSocket(`$${WS_URL}?userId=$${userId}`)
+    socket.value.error = (error) => {
+        console.error('WebSocket错误:', error);
+        setTimeout(() => connectWebSocket(userId), 3000);
+    }
     socket.value.onmessage = (event) => {
       const data = JSON.parse(event.data)
       
@@ -53,16 +57,16 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // 心跳检测
-    const heartbeatInterval = setInterval(() => {
+    const heartbeat = setInterval(() => {
       if (socket.value.readyState === WebSocket.OPEN) {
-        socket.value.send(JSON.stringify({ type: 'heartbeat' }))
+        socket.value.send('{}');
       }
-    }, 30000)
+    }, pingInterval);
 
     // 清理
     socket.value.onclose = () => {
-      clearInterval(heartbeatInterval)
-    }
+      clearInterval(heartbeat);
+    };
   }
 
   const sendMessage = (content) => {
