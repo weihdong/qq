@@ -57,9 +57,7 @@
         // 合并配置项
         headers: {
           'Content-Type': 'application/json',
-          'X-Client-Version': 'web-1.0.1' // 更实用的自定义头
         },
-        withCredentials: true,
         timeout: 10000, // 调整为10秒（更合理的超时时间）
         validateStatus: (status) => status < 500 // 接受500以下的状态码
       }
