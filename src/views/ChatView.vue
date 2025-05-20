@@ -570,12 +570,12 @@ const addFriend = async () => {
   flex: 1;
   height: 48px;
   border: 2px solid var(--border);
-  border-radius: 26px;
+  border-radius: 28px;
   padding: 0 20px;
   font-size: 16px;
   background: white;
   transition: all 0.2s;
-  margin-left: 4%;
+  margin-left: 4.5%;
 }
 
 .footer input:focus {
@@ -586,7 +586,7 @@ const addFriend = async () => {
 
 /* 发送按钮 */
 .footer button {
-  width: 88px;
+  width: 96px;
   height: 48px;
   background: orange;
   color: black;
@@ -595,7 +595,7 @@ const addFriend = async () => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  margin-right: 4%;
+  margin-right: 4.5%;
 }
 
 .footer button:hover {
