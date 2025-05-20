@@ -82,11 +82,82 @@
   const showAddFriendModal = ref(false)
   const newFriendName = ref('')
   
-  // 获取基础URL
+  // WebSocket 连接管理
+  let reconnectAttempts = 0
+  const MAX_RECONNECT_ATTEMPTS = 5
+  
   const getBaseURL = () => {
     return window.location.hostname.includes('085410.xyz') 
       ? 'https://web-production-5fc08.up.railway.app'
       : 'http://localhost:3000'
+  }
+  
+  const getWsURL = () => {
+    return window.location.hostname.includes('085410.xyz') 
+      ? 'wss://web-production-5fc08.up.railway.app'
+      : 'ws://localhost:3000'
+  }
+  
+  // 稳定的WebSocket连接方法
+  const connectWebSocket = () => {
+    const ws = new WebSocket(getWsURL())
+    let heartbeatInterval
+  
+    ws.onopen = () => {
+      console.log('WebSocket连接成功')
+      reconnectAttempts = 0
+      ws.send(JSON.stringify({
+        type: 'connect',
+        userId: localStorage.getItem('userId')
+      }))
+      
+      // 心跳机制（每25秒发送一次）
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }))
+        }
+      }, 25000)
+    }
+  
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        switch (message.type) {
+          case 'message':
+            store.messages.push(message)
+            break
+          case 'status':
+            const friend = store.friends.find(f => f._id === message.userId)
+            if (friend) friend.isOnline = message.online
+            break
+          case 'system':
+            console.log('系统消息:', message.message)
+            break
+        }
+      } catch (error) {
+        console.error('消息解析错误:', error)
+      }
+    }
+  
+    ws.onclose = (event) => {
+      console.log('连接关闭，代码:', event.code, '原因:', event.reason)
+      clearInterval(heartbeatInterval)
+      
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        const delay = Math.min(3000 * (reconnectAttempts + 1), 15000)
+        console.log(`将在 ${delay}ms 后尝试重连...`)
+        setTimeout(() => {
+          reconnectAttempts++
+          store.ws = connectWebSocket()
+        }, delay)
+      }
+    }
+  
+    ws.onerror = (error) => {
+      console.error('WebSocket错误:', error)
+    }
+  
+    return ws
   }
   
   // 退出登录
@@ -102,49 +173,48 @@
     newFriendName.value = ''
   }
   
-const currentFriend = computed(() => {
-    return store.friends.find(f =>f._id === store.currentChat)
-})
-const currentPlaceholder = computed(() => {
-    if(!store.currentChat) return '点击顶栏头像进行聊天吧！'
+  const currentFriend = computed(() => {
+    return store.friends.find(f => f._id === store.currentChat)
+  })
+  
+  const currentPlaceholder = computed(() => {
+    if (!store.currentChat) return '点击顶栏头像进行聊天吧！'
     return currentFriend.value
-     ?`输入消息给${currentFriend.value.username}`
-     :'正在加载用户信息...'
-})
-
-const addFriend = async () => {
-  try {
-    if (!newFriendName.value.trim()) {
-      alert('请输入好友用户名')
-      return
-    }
-
-    // 修改请求参数字段名
-    const response = await axios.post(`${getBaseURL()}/api/friends`, {
-      userId: localStorage.getItem('userId'),
-      friendUsername: newFriendName.value.trim() // 修正字段名
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
+      ? `给 ${currentFriend.value.username} 发送消息`
+      : '正在加载用户信息...'
+  })
+  
+  const addFriend = async () => {
+    try {
+      if (!newFriendName.value.trim()) {
+        alert('请输入好友用户名')
+        return
       }
-    })
-
-    // 调整响应处理逻辑
-    if (response.data && response.data.friendId) {
-      store.friends.push({
-        _id: response.data.friendId,
-        username: response.data.username
+  
+      const response = await axios.post(`${getBaseURL()}/api/friends`, {
+        userId: localStorage.getItem('userId'),
+        friendUsername: newFriendName.value.trim()
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
       })
-      toggleAddFriend()
-    } else {
-      throw new Error('添加好友失败')
+  
+      if (response.data && response.data.friendId) {
+        store.friends.push({
+          _id: response.data.friendId,
+          username: response.data.username
+        })
+        toggleAddFriend()
+      } else {
+        throw new Error('添加好友失败')
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || '添加好友失败'
+      alert(`错误: ${errorMsg}`)
+      console.error('添加好友失败详情:', error.response?.data)
     }
-  } catch (error) {
-    const errorMsg = error.response?.data?.error || '添加好友失败'
-    alert(`错误: ${errorMsg}`)
-    console.error('添加好友失败详情:', error.response?.data)
   }
-}
   
   // 选择好友
   const selectFriend = async (friendId) => {
@@ -152,19 +222,33 @@ const addFriend = async () => {
     await store.loadMessages()
   }
   
-  // 发送消息
+  // 发送消息（增强版）
   const sendMessage = () => {
-  if (newMessage.value.trim() && store.currentChat && store.ws) {
-    const message = {
-      type: 'message',
-      from: userId,
-      to: store.currentChat,
-      content: newMessage.value.trim()
-    };
-    store.ws.send(JSON.stringify(message));
-    newMessage.value = '';
+    if (!newMessage.value.trim()) return
+  
+    if (!store.ws || store.ws.readyState !== WebSocket.OPEN) {
+      console.log('连接未就绪，尝试重新发送...')
+      store.ws = connectWebSocket()
+      setTimeout(sendMessage, 500)
+      return
+    }
+  
+    try {
+      const message = {
+        type: 'message',
+        from: userId,
+        to: store.currentChat,
+        content: newMessage.value.trim(),
+        timestamp: new Date().toISOString()
+      }
+      
+      store.ws.send(JSON.stringify(message))
+      newMessage.value = ''
+    } catch (error) {
+      console.error('发送消息失败:', error)
+      alert('消息发送失败，请检查网络连接')
+    }
   }
-}
   
   // 时间格式化
   const formatTime = (timestamp) => {
@@ -186,46 +270,25 @@ const addFriend = async () => {
     }
   }, { deep: true })
   
-  // 初始化加载好友列表
+  // 初始化加载
   onMounted(async () => {
-  try {
-    // 获取好友列表
-    const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
-      params: { userId }
-    });
-    store.friends = friendsRes.data.friends.map(f => ({
-      ...f,
-      isOnline: false // 初始化为离线状态
-    }));
-
-    // WebSocket连接
-    const ws = new WebSocket(`wss://web-production-5fc08.up.railway.app`);
-    ws.userId = userId;
-    
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: 'connect',
-        userId
-      }));
-    };
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'message') {
-        store.messages.push(message);
-      }
-      if (message.type === 'status') {
-        const friend = store.friends.find(f => f._id === message.userId);
-        if (friend) friend.isOnline = message.online;
-      }
-    };
-
-    store.ws = ws;
-  } catch (error) {
-    console.error('初始化失败:', error);
-  }
-
-})
+    try {
+      // 加载好友列表
+      const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
+        params: { userId }
+      })
+      store.friends = friendsRes.data.friends.map(f => ({
+        ...f,
+        isOnline: false // 初始状态设为离线
+      }))
+  
+      // 建立WebSocket连接
+      store.ws = connectWebSocket()
+    } catch (error) {
+      console.error('初始化失败:', error)
+      alert('初始化失败，请刷新页面重试')
+    }
+  })
   </script>
   
   <!-- 样式保持不变 -->
