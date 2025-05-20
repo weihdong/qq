@@ -98,26 +98,32 @@
       : 'ws://localhost:3000'
   }
   
-  // 稳定的WebSocket连接方法
-  const connectWebSocket = () => {
-    const ws = new WebSocket(getWsURL())
-    let heartbeatInterval
-  
-    ws.onopen = () => {
-      console.log('WebSocket连接成功')
-      reconnectAttempts = 0
+// WebSocket 连接管理（优化重连逻辑）
+const connectWebSocket = () => {
+  const ws = new WebSocket(getWsURL())
+  let heartbeatInterval
+
+  const sendConnect = () => {
+    if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'connect',
         userId: localStorage.getItem('userId')
       }))
-      
-      // 心跳机制（每25秒发送一次）
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }))
-        }
-      }, 25000)
     }
+  }
+
+  ws.onopen = () => {
+    console.log('WebSocket连接成功')
+    reconnectAttempts = 0
+    sendConnect()
+    
+    // 心跳机制（每25秒发送一次）
+    heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }))
+      }
+    }, 25000)
+  }
   
     ws.onmessage = (event) => {
       try {
@@ -139,19 +145,28 @@
       }
     }
   
-    ws.onclose = (event) => {
-      console.log('连接关闭，代码:', event.code, '原因:', event.reason)
-      clearInterval(heartbeatInterval)
-      
+  // 新增：在收到关闭事件时尝试立即重连
+  ws.onclose = (event) => {
+    console.log('连接关闭，代码:', event.code, '原因:', event.reason)
+    clearInterval(heartbeatInterval)
+    
+    // 立即尝试重连（指数退避）
+    const reconnect = () => {
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        const delay = Math.min(3000 * (reconnectAttempts + 1), 15000)
-        console.log(`将在 ${delay}ms 后尝试重连...`)
-        setTimeout(() => {
-          reconnectAttempts++
-          store.ws = connectWebSocket()
-        }, delay)
+        console.log(`尝试第 ${reconnectAttempts + 1} 次重连...`)
+        store.ws = connectWebSocket()
+        reconnectAttempts++
       }
     }
+    
+    // 首次立即重连，后续使用延迟
+    if (reconnectAttempts === 0) {
+      reconnect()
+    } else {
+      const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
+      setTimeout(reconnect, delay)
+    }
+  }
   
     ws.onerror = (error) => {
       console.error('WebSocket错误:', error)
@@ -184,7 +199,7 @@
       : '正在加载用户信息...'
   })
   
-// 在 addFriend 方法中增加错误处理
+// 优化后的添加好友方法
 const addFriend = async () => {
   try {
     if (!newFriendName.value.trim()) {
@@ -195,22 +210,29 @@ const addFriend = async () => {
     const response = await axios.post(`${getBaseURL()}/api/friends`, {
       userId: localStorage.getItem('userId'),
       friendUsername: newFriendName.value.trim()
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 5000 // 增加超时设置
     });
 
-    if (response.data && response.data.friendId) {
-      // 更新本地状态
-      store.friends.push({
+    if (response.data?.friendId) {
+      // 主动查询新好友信息
+      const friendInfo = await axios.get(`${getBaseURL()}/api/user/${response.data.friendId}`)
+      
+      // 更新本地状态并通知对方
+      const newFriend = {
         _id: response.data.friendId,
-        username: response.data.username,
-        isOnline: false // 初始在线状态
-      });
+        username: friendInfo.data.username,
+        isOnline: onlineUsers.has(response.data.friendId) // 实时在线状态
+      }
+      
+      store.friends.push(newFriend);
       toggleAddFriend();
-      alert('添加成功！');
+      
+      // 通过WebSocket通知对方更新
+      if (store.ws?.readyState === WebSocket.OPEN) {
+        store.ws.send(JSON.stringify({
+          type: 'friendUpdate',
+          friendId: localStorage.getItem('userId')
+        }))
+      }
     }
   } catch (error) {
     let errorMessage = '添加失败，请重试';
