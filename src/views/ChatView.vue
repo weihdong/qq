@@ -154,12 +154,17 @@ const addFriend = async () => {
   
   // 发送消息
   const sendMessage = () => {
-    if (newMessage.value.trim()) {
-      store.sendMessage(newMessage.value)
-      newMessage.value = ''
-      
-    }
+  if (newMessage.value.trim() && store.currentChat && store.ws) {
+    const message = {
+      type: 'message',
+      from: userId,
+      to: store.currentChat,
+      content: newMessage.value.trim()
+    };
+    store.ws.send(JSON.stringify(message));
+    newMessage.value = '';
   }
+}
   
   // 时间格式化
   const formatTime = (timestamp) => {
@@ -184,18 +189,42 @@ const addFriend = async () => {
   // 初始化加载好友列表
   onMounted(async () => {
   try {
-    const response = await axios.get(`${getBaseURL()}/api/friends`, {
+    // 获取好友列表
+    const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
       params: { userId }
-    })
-    // 根据后端响应结构调整数据格式
-    store.friends = response.data.friends.map(f => ({
-      _id: f.id,
-      username: f.username
-    }))
-    store.connectWebSocket(userId)
+    });
+    store.friends = friendsRes.data.friends.map(f => ({
+      ...f,
+      isOnline: false // 初始化为离线状态
+    }));
+
+    // WebSocket连接
+    const ws = new WebSocket(`wss://web-production-5fc08.up.railway.app`);
+    ws.userId = userId;
+    
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        type: 'connect',
+        userId
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'message') {
+        store.messages.push(message);
+      }
+      if (message.type === 'status') {
+        const friend = store.friends.find(f => f._id === message.userId);
+        if (friend) friend.isOnline = message.online;
+      }
+    };
+
+    store.ws = ws;
   } catch (error) {
-    console.error('初始化失败:', error)
+    console.error('初始化失败:', error);
   }
+
 })
   </script>
   
