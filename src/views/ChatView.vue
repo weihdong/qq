@@ -112,32 +112,39 @@ const currentPlaceholder = computed(() => {
      :'正在加载用户信息...'
 })
 
-  const addFriend = async () => {
-    try {
-      if (!newFriendName.value.trim()) {
-        alert('请输入好友用户名')
-        return
-      }
-  
-      const response = await axios.post(`${getBaseURL()}/api/friends`, {
-        userId: localStorage.getItem('userId'),
-        friendName: newFriendName.value.trim()
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-  
-      if (response.data.success) {
-        store.friends.push(response.data.friend)
-        toggleAddFriend()
-      }
-    } catch (error) {
-      const errorMsg = error.response?.data?.error || '添加好友失败'
-      alert(`错误: ${errorMsg}`)
-      console.error('添加好友失败详情:', error.response?.data)
+const addFriend = async () => {
+  try {
+    if (!newFriendName.value.trim()) {
+      alert('请输入好友用户名')
+      return
     }
+
+    // 修改请求参数字段名
+    const response = await axios.post(`${getBaseURL()}/api/friends`, {
+      userId: localStorage.getItem('userId'),
+      friendUsername: newFriendName.value.trim() // 修正字段名
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    // 调整响应处理逻辑
+    if (response.data && response.data.friendId) {
+      store.friends.push({
+        _id: response.data.friendId,
+        username: response.data.username
+      })
+      toggleAddFriend()
+    } else {
+      throw new Error('添加好友失败')
+    }
+  } catch (error) {
+    const errorMsg = error.response?.data?.error || '添加好友失败'
+    alert(`错误: ${errorMsg}`)
+    console.error('添加好友失败详情:', error.response?.data)
   }
+}
   
   // 选择好友
   const selectFriend = async (friendId) => {
@@ -176,16 +183,20 @@ const currentPlaceholder = computed(() => {
   
   // 初始化加载好友列表
   onMounted(async () => {
-    try {
-      const response = await axios.get(`${getBaseURL()}/api/friends`, {
-        params: { userId }
-      })
-      store.friends = response.data
-      store.connectWebSocket(userId)
-    } catch (error) {
-      console.error('初始化失败:', error)
-    }
-  })
+  try {
+    const response = await axios.get(`${getBaseURL()}/api/friends`, {
+      params: { userId }
+    })
+    // 根据后端响应结构调整数据格式
+    store.friends = response.data.friends.map(f => ({
+      _id: f.id,
+      username: f.username
+    }))
+    store.connectWebSocket(userId)
+  } catch (error) {
+    console.error('初始化失败:', error)
+  }
+})
   </script>
   
   <!-- 样式保持不变 -->
