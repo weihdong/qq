@@ -184,37 +184,53 @@
       : '正在加载用户信息...'
   })
   
-  const addFriend = async () => {
-    try {
-      if (!newFriendName.value.trim()) {
-        alert('请输入好友用户名')
-        return
-      }
-  
-      const response = await axios.post(`${getBaseURL()}/api/friends`, {
-        userId: localStorage.getItem('userId'),
-        friendUsername: newFriendName.value.trim()
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-  
-      if (response.data && response.data.friendId) {
-        store.friends.push({
-          _id: response.data.friendId,
-          username: response.data.username
-        })
-        toggleAddFriend()
-      } else {
-        throw new Error('添加好友失败')
-      }
-    } catch (error) {
-      const errorMsg = error.response?.data?.error || '添加好友失败'
-      alert(`错误: ${errorMsg}`)
-      console.error('添加好友失败详情:', error.response?.data)
+// 在 addFriend 方法中增加错误处理
+const addFriend = async () => {
+  try {
+    if (!newFriendName.value.trim()) {
+      alert('请输入好友用户名');
+      return;
     }
+
+    const response = await axios.post(`${getBaseURL()}/api/friends`, {
+      userId: localStorage.getItem('userId'),
+      friendUsername: newFriendName.value.trim()
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 5000 // 增加超时设置
+    });
+
+    if (response.data && response.data.friendId) {
+      // 更新本地状态
+      store.friends.push({
+        _id: response.data.friendId,
+        username: response.data.username,
+        isOnline: false // 初始在线状态
+      });
+      toggleAddFriend();
+      alert('添加成功！');
+    }
+  } catch (error) {
+    let errorMessage = '添加失败，请重试';
+    if (error.response) {
+      switch (error.response.data.code) {
+        case 'FRIEND_NOT_FOUND':
+          errorMessage = '用户不存在';
+          break;
+        case 'ALREADY_FRIENDS':
+          errorMessage = '已是好友关系';
+          break;
+        case 'SELF_ADDITION':
+          errorMessage = '不能添加自己';
+          break;
+      }
+    }
+    alert(`错误: ${errorMessage}`);
+    console.error('添加好友失败详情:', error.response?.data || error.message);
   }
+}
   
   // 选择好友
   const selectFriend = async (friendId) => {
