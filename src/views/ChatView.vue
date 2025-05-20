@@ -213,26 +213,17 @@ const addFriend = async () => {
     });
 
     if (response.data?.friendId) {
-      // 主动查询新好友信息
+      // 调用新添加的获取用户信息接口
       const friendInfo = await axios.get(`${getBaseURL()}/api/user/${response.data.friendId}`)
       
-      // 更新本地状态并通知对方
-      const newFriend = {
+      store.friends.push({
         _id: response.data.friendId,
         username: friendInfo.data.username,
-        isOnline: onlineUsers.has(response.data.friendId) // 实时在线状态
-      }
+        isOnline: false // 此处可以结合WebSocket状态更新
+      });
       
-      store.friends.push(newFriend);
       toggleAddFriend();
-      
-      // 通过WebSocket通知对方更新
-      if (store.ws?.readyState === WebSocket.OPEN) {
-        store.ws.send(JSON.stringify({
-          type: 'friendUpdate',
-          friendId: localStorage.getItem('userId')
-        }))
-      }
+      alert('添加成功！');
     }
   } catch (error) {
     let errorMessage = '添加失败，请重试';
