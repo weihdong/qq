@@ -26,88 +26,65 @@
     </div>
 
 
-      <!-- 添加好友弹窗 -->
-      <div v-if="showAddFriendModal" class="modal-mask">
-      <div class="modal">
-          <input 
-          v-model="newFriendName" 
-          placeholder="  输入用户名"
-          class="modal-input"
-          >
-          <div class="modal-actions">
-          <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
-          <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
-          </div>
-      </div>
-      </div>
-
-    <!-- 聊天区域 -->
-<!-- 模板需要调整为 -->
-    
-        <!-- 语音消息展示 -->
-  <div 
-    v-for="msg in store.messages"
-    :key="msg._id"
-    :class="['message-container', { 'own-message': msg.from === userId }]"
-  >
-    <div v-if="msg.type === 'voice'" class="voice-message">
-      <audio :src="msg.content" controls></audio>
-      <span>{{ formatDuration(msg.duration) }}</span>
+    <!-- 添加好友弹窗 -->
+    <div v-if="showAddFriendModal" class="modal-mask">
+    <div class="modal">
+        <input 
+        v-model="newFriendName" 
+        placeholder="  输入用户名"
+        class="modal-input"
+        >
+        <div class="modal-actions">
+        <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
+        <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
+        </div>
     </div>
-    
-    <!-- 图片消息展示 -->
-    <div v-else-if="msg.type === 'image'" class="image-message">
-      <img :src="msg.content" alt="发送的图片" @click="openImage(msg.content)">
     </div>
 
-
-      <div class="chat-area" ref="chatArea">
-       <div 
-          v-for="msg in store.messages"
-          :key="msg._id"
-          :class="['message-container', { 'own-message': msg.from === userId }]"
+  <!-- 聊天区域 -->
+    <div class="chat-area" ref="chatArea">
+      <div 
+        v-for="msg in store.messages"
+        :key="msg._id"
+        :class="['message-container', { 'own-message': msg.from === userId }]"
       >
-       <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-       <div class="message-bubble">
-         <div class="message-content">{{ msg.content }}</div>
+        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+        <div class="message-bubble">
+          <div class="message-content">
+            <template v-if="msg.type === 'image'">
+              <img :src="msg.content" alt="图片" style="max-width: 100%; height: auto;">
+            </template>
+            <template v-else-if="msg.type === 'voice'">
+              <audio controls :src="msg.content"></audio>
+            </template>
+            <template v-else>
+              {{ msg.content }}
+            </template>
+          </div>
+        </div>
       </div>
-     </div>
     </div>
-
     <!-- 底栏 -->
     <div class="footer">
-    <!-- 语音按钮 -->
-    <button 
-      class="voice-btn"
-      @mousedown="startRecording"
-      @mouseup="stopRecording"
-      @touchstart="startRecording"
-      @touchend="stopRecording"
-    >
-      🎤
-    </button>
-    
-    <!-- 图片上传按钮 -->
-    <label for="image-upload" class="upload-btn">
-      📷
-      <input 
-        id="image-upload"
-        type="file"
-        accept="image/*"
-        @change="handleImageUpload"
-        hidden
+      <input
+        v-model="newMessage"
+        @keyup.enter="sendMessage"
+        :placeholder="currentPlaceholder"
       >
-    </label>
-    
-    <input
-      v-model="newMessage"
-      @keyup.enter="sendTextMessage"
-      :placeholder="currentPlaceholder"
-    >
-    
-    <button @click="sendTextMessage">发送</button>
-  </div>
-  </div>
+      <button @click="sendMessage">发送</button>
+      <!-- 新增上传按钮 -->
+      <input
+        type="file"
+        id="fileInput"
+        @change="handleFileUpload"
+        accept="image/*, audio/*"
+        style="display: none;"
+      >
+      <button @click="openFileInput">上传文件</button>
+      <!-- 新增语音录制按钮 -->
+      <button v-if="!isRecording" @click="startRecording">录制语音</button>
+      <button v-else @click="stopRecording">停止录制</button>
+    </div>
   </div>
 </template>
 
@@ -124,14 +101,71 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
-
-// 新增状态和引用
-import { ref } from 'vue';
+const fileInput = ref(null);
 const isRecording = ref(false);
 const mediaRecorder = ref(null);
 const audioChunks = ref([]);
-const audioUrl = ref('');
 
+const openFileInput = () => {
+  fileInput.value.click();
+};
+
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await axios.post(`${getBaseURL()}/api/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    if (response.data.url) {
+      const message = {
+        type: file.type.startsWith('image') ? 'image' : 'voice',
+        from: userId,
+        to: store.currentChat,
+        content: response.data.url,
+        timestamp: new Date().toISOString()
+      };
+      store.ws.send(JSON.stringify(message));
+      fileInput.value.value = '';
+    }
+  } catch (error) {
+    console.error('文件上传失败:', error);
+    alert('文件上传失败，请重试');
+  }
+};
+
+// 语音录制功能
+const startRecording = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder.value = new MediaRecorder(stream);
+    isRecording.value = true;
+    audioChunks.value = [];
+
+    mediaRecorder.value.ondataavailable = (event) => {
+      audioChunks.value.push(event.data);
+    };
+
+    mediaRecorder.value.start();
+  } catch (error) {
+    console.error('语音录制失败:', error);
+    alert('语音录制失败，请检查权限');
+  }
+};
+
+const stopRecording = () => {
+  if (mediaRecorder.value) {
+    mediaRecorder.value.stop();
+    isRecording.value = false;
+  }
+};
 // WebSocket 连接管理
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
@@ -300,109 +334,7 @@ const selectFriend = async (friendId) => {
   store.currentChat = friendId
   await store.loadMessages()
 }
-// 语音录制功能
-const startRecording = async () => {
-  try {
-    isRecording.value = true;
-    audioChunks.value = [];
-    
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder.value = new MediaRecorder(stream);
-    
-    mediaRecorder.value.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.value.push(event.data);
-      }
-    };
-    
-    mediaRecorder.value.onstop = async () => {
-      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' });
-      audioUrl.value = URL.createObjectURL(audioBlob);
-      
-      // 计算时长
-      const audio = new Audio(audioUrl.value);
-      await new Promise(resolve => {
-        audio.onloadedmetadata = resolve;
-      });
-      const duration = audio.duration;
-      
-      // 上传语音文件
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'voice.webm');
-      
-      try {
-        const res = await axios.post(`${getBaseURL()}/api/upload`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        
-        // 发送语音消息
-        store.sendVoice(res.data.url, duration);
-      } catch (error) {
-        console.error('语音上传失败:', error);
-      }
-      
-      // 释放资源
-      stream.getTracks().forEach(track => track.stop());
-    };
-    
-    mediaRecorder.value.start();
-  } catch (error) {
-    console.error('录音失败:', error);
-    alert('无法访问麦克风，请检查权限设置');
-  }
-};
 
-const stopRecording = () => {
-  if (mediaRecorder.value && isRecording.value) {
-    isRecording.value = false;
-    mediaRecorder.value.stop();
-  }
-};
-
-// 图片上传处理
-const handleImageUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  try {
-    const res = await axios.post(`${getBaseURL()}/api/upload`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    
-    // 发送图片消息
-    store.sendImage(res.data.url);
-  } catch (error) {
-    console.error('图片上传失败:', error);
-    alert('图片上传失败');
-  }
-  
-  // 重置input
-  e.target.value = '';
-};
-
-// 语音时长格式化
-const formatDuration = (seconds) => {
-  if (!seconds) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-};
-
-// 打开大图
-const openImage = (url) => {
-  window.open(url, '_blank');
-};
-
-// 重命名文本发送方法
-const sendTextMessage = () => {
-  if (newMessage.value.trim()) {
-    store.sendMessage(newMessage.value.trim());
-    newMessage.value = '';
-  }
-};
 // 发送消息（增强版）
 const sendMessage = () => {
   if (!newMessage.value.trim()) return
@@ -450,7 +382,10 @@ watch(() => store.messages, async () => {
     chatArea.value.scrollTop = chatArea.value.scrollHeight
   }
 }, { deep: true })
-
+// 在onMounted中初始化fileInput
+onMounted(() => {
+  fileInput.value = document.getElementById('fileInput');
+});
 // 初始化加载
 onMounted(async () => {
   try {
@@ -772,57 +707,6 @@ z-index: 1;
 border: 2px solid transparent;
 }
 
-
-/* 新增样式 */
-.voice-btn, .upload-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f0f0f0;
-  cursor: pointer;
-  font-size: 20px;
-  margin: 0 8px;
-  transition: all 0.2s;
-}
-
-.voice-btn:active, .upload-btn:active {
-  transform: scale(0.9);
-  background: #e0e0e0;
-}
-
-.voice-message {
-  background: #f0f0f0;
-  border-radius: 20px;
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.image-message img {
-  max-width: 250px;
-  max-height: 250px;
-  border-radius: 12px;
-  cursor: zoom-in;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* 响应式调整 */
-@media (max-width: 480px) {
-  .image-message img {
-    max-width: 180px;
-    max-height: 180px;
-  }
-  
-  .voice-btn, .upload-btn {
-    width: 36px;
-    height: 36px;
-    font-size: 16px;
-  }
-}
 /* 选中状态 */
 .avatar-circle.active {
   position: relative;

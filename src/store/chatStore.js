@@ -73,36 +73,6 @@ export const useChatStore = defineStore('chat', () => {
     socket.value.send(JSON.stringify(msg))
   }
 
-  // 增加发送图片和语音的方法
-const sendImage = (imageUrl) => {
-  if (!store.currentChat) return;
-  
-  const msg = {
-    type: 'image',
-    from: localStorage.getItem('userId'),
-    to: store.currentChat,
-    content: imageUrl
-  }
-  
-  socket.value.send(JSON.stringify(msg));
-}
-
-const sendVoice = (audioUrl, duration) => {
-  if (!store.currentChat) return;
-  
-  const msg = {
-    type: 'voice',
-    from: localStorage.getItem('userId'),
-    to: store.currentChat,
-    content: audioUrl,
-    duration: duration // 语音时长
-  }
-  
-  socket.value.send(JSON.stringify(msg));
-}
-
-
-
   const loadMessages = async () => {
     try {
       const res = await axios.get(`${getBaseURL()}/api/messages`, {
@@ -145,8 +115,6 @@ const sendVoice = (audioUrl, duration) => {
     connectWebSocket,
     sendMessage,
     loadMessages,
-    loadFriends,
-    sendImage,
-    sendVoice
+    loadFriends
   }
 })
