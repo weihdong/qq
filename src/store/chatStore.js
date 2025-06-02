@@ -18,68 +18,65 @@ export const useChatStore = defineStore('chat', () => {
 
   // 方法
 
-// 更新 connectWebSocket 方法
+// 在 chatStore.js 中完善 WebSocket 管理
+let heartbeatInterval = null
+
 const connectWebSocket = (userId) => {
-  const WS_URL = import.meta.env.VITE_WS_URL;
-  
   // 关闭现有连接
   if (socket.value) {
-    socket.value.close();
+    socket.value.close()
+    clearInterval(heartbeatInterval)
   }
-  
-  socket.value = new WebSocket(`${WS_URL}?userId=${userId}`);
+
+  const WS_URL = import.meta.env.VITE_WS_URL
+  socket.value = new WebSocket(`${WS_URL}?userId=${userId}`)
   
   socket.value.onopen = () => {
-    console.log('WebSocket连接成功');
-    // 发送连接确认
+    console.log('WebSocket连接成功')
     socket.value.send(JSON.stringify({
       type: 'connect',
       userId
-    }));
+    }))
     
-    // 心跳检测
+    // 心跳机制
     heartbeatInterval = setInterval(() => {
       if (socket.value.readyState === WebSocket.OPEN) {
-        socket.value.send(JSON.stringify({ type: 'ping' }));
+        socket.value.send(JSON.stringify({ type: 'ping' }))
       }
-    }, 25000);
-  };
+    }, 25000)
+  }
   
   socket.value.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    
-    // 处理心跳响应
-    if (data.type === 'pong') return;
+    const data = JSON.parse(event.data)
     
     // 处理状态更新
     if (data.type === 'status-update') {
-      const friend = friends.value.find(f => f._id === data.userId);
+      const friend = friends.value.find(f => f._id === data.userId)
       if (friend) {
-        friend.isOnline = data.status;
-        friends.value = [...friends.value]; // 触发响应式更新
+        friend.isOnline = data.status
       }
-      return;
+      return
     }
     
-    // 处理普通消息
-    messages.value.push({
-      ...data,
-      timestamp: new Date(data.timestamp)
-    });
-  };
+    // 处理消息
+    if (['text', 'image', 'audio'].includes(data.type)) {
+      messages.value.push({
+        ...data,
+        timestamp: new Date(data.timestamp)
+      })
+    }
+  }
   
   socket.value.onerror = (error) => {
-    console.error('WebSocket错误:', error);
-    setTimeout(() => connectWebSocket(userId), 3000);
-  };
+    console.error('WebSocket错误:', error)
+  }
   
   socket.value.onclose = () => {
-    clearInterval(heartbeatInterval);
-    console.log('WebSocket连接关闭');
-  };
-  
-  return socket.value;
-};
+    clearInterval(heartbeatInterval)
+    console.log('连接关闭，5秒后重连...')
+    setTimeout(() => connectWebSocket(userId), 5000)
+  }
+}
 
 // 添加 clearMessages 方法
 const clearMessages = () => {
@@ -136,8 +133,9 @@ const sendMessage = (content) => {
       })
       
       // 初始化在线状态
-      friends.value = res.data.map(friend => ({
-        ...friend,
+      friends.value = res.data.friends.map(friend => ({
+        _id: friend._id,
+        username: friend.username,
         isOnline: false // 默认离线，等待WebSocket更新
       }))
       

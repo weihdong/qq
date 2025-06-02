@@ -130,83 +130,18 @@
   }
   
 // WebSocket 连接管理（优化重连逻辑）
-const connectWebSocket = () => {
-  const ws = new WebSocket(getWsURL())
-  let heartbeatInterval
+// 删除 ChatView.vue 中整个 connectWebSocket 函数
+// 改为使用 store 的统一连接
 
-  const sendConnect = () => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'connect',
-        userId: localStorage.getItem('userId')
-      }))
-    }
-  }
-
-  ws.onopen = () => {
-    console.log('WebSocket连接成功')
-    reconnectAttempts = 0
-    sendConnect()
-    
-    // 心跳机制（每25秒发送一次）
-    heartbeatInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ping' }))
-      }
-    }, 25000)
-  }
+// 在 onMounted 中简化：
+onMounted(async () => {
+  await store.loadFriends();
+  store.connectWebSocket(localStorage.getItem('userId'));
   
-  ws.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data)
-      switch (message.type) {
-        case 'text':   // 处理文本消息
-        case 'image':  // 处理图片消息
-        case 'audio':  // 处理语音消息
-          store.messages.push(message)
-          break
-        case 'status':
-          const friend = store.friends.find(f => f._id === message.userId)
-          if (friend) friend.isOnline = message.online
-          break
-        case 'system':
-          console.log('系统消息:', message.message)
-          break
-      }
-    } catch (error) {
-      console.error('消息解析错误:', error)
-    }
+  if (store.currentChat) {
+    await store.loadMessages();
   }
-  
-  // 新增：在收到关闭事件时尝试立即重连
-  ws.onclose = (event) => {
-    console.log('连接关闭，代码:', event.code, '原因:', event.reason)
-    clearInterval(heartbeatInterval)
-    
-    // 立即尝试重连（指数退避）
-    const reconnect = () => {
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        console.log(`尝试第 ${reconnectAttempts + 1} 次重连...`)
-        store.ws = connectWebSocket()
-        reconnectAttempts++
-      }
-    }
-    
-    // 首次立即重连，后续使用延迟
-    if (reconnectAttempts === 0) {
-      reconnect()
-    } else {
-      const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
-      setTimeout(reconnect, delay)
-    }
-  }
-  
-    ws.onerror = (error) => {
-      console.error('WebSocket错误:', error)
-    }
-  
-    return ws
-  }
+});
   
   // 退出登录
   const logout = () => {
@@ -428,7 +363,11 @@ const sendMessage = () => {
   newMessage.value = '';
   
   // 通过 store 发送消息
-  store.sendMessage(tempMessage.content);
+  store.sendMessage({
+    type: 'text',
+    content: newMessage.value.trim(),
+    to: store.currentChat
+  });
 };
   
   // 时间格式化
