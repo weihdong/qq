@@ -94,8 +94,8 @@
         <button class="footer-btn" @click="toggleVoiceRecord">
           <span class="icon">{{ isRecording ? '⏹️' : '🎤' }}</span>
         </button>
-      </div>
         <button @click="sendMessage">发送</button>
+      </div>
     </div>
   </template>
   
