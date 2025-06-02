@@ -99,19 +99,46 @@
     </div>
   </template>
   
-  <script setup>
-  import { ref, onMounted, nextTick, watch, computed } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { useChatStore } from '@/store/chatStore'
-  import axios from 'axios'
+<script setup>
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useChatStore } from '@/store/chatStore'
+import axios from 'axios'
+
+const router = useRouter()
+const store = useChatStore()
+const newMessage = ref('')
+const userId = localStorage.getItem('userId')
+const chatArea = ref(null)
+const showAddFriendModal = ref(false)
+const newFriendName = ref('')
+
+  // ChatView.vue - 在 setup() 中添加以下代码
+const isOnline = ref(navigator.onLine);
+
+const handleOnline = () => {
+  isOnline.value = true;
+  console.log('🌐 网络恢复，尝试重连WebSocket');
+  store.connectWebSocket(localStorage.getItem('userId'));
+};
+
+const handleOffline = () => {
+  isOnline.value = false;
+  console.warn('🌐 网络连接丢失');
+};
+
+onMounted(() => {
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
   
-  const router = useRouter()
-  const store = useChatStore()
-  const newMessage = ref('')
-  const userId = localStorage.getItem('userId')
-  const chatArea = ref(null)
-  const showAddFriendModal = ref(false)
-  const newFriendName = ref('')
+  // 添加连接状态指示器
+  console.log('网络状态:', isOnline.value ? '在线' : '离线');
+});
+
+onUnmounted(() => {
+  window.removeEventListener('online', handleOnline);
+  window.removeEventListener('offline', handleOffline);
+});
   
   // WebSocket 连接管理
   let reconnectAttempts = 0
@@ -167,51 +194,49 @@ onMounted(async () => {
       : '正在加载用户信息...'
   })
   
-// 优化后的添加好友方法
+// ChatView.vue - 替换 addFriend 函数
 const addFriend = async () => {
   try {
-    if (!newFriendName.value.trim()) {
-      alert('请输入好友用户名');
+    // 确保用户名是字符串且非空
+    const name = newFriendName.value;
+    if (typeof name !== 'string' || !name.trim()) {
+      alert('请输入有效的用户名');
       return;
     }
 
     const response = await axios.post(`${getBaseURL()}/api/friends`, {
       userId: localStorage.getItem('userId'),
-      friendUsername: newFriendName.value.trim()
+      friendUsername: name.trim()
     });
 
     if (response.data?.friendId) {
-      // 调用新添加的获取用户信息接口
-      const friendInfo = await axios.get(`${getBaseURL()}/api/user/${response.data.friendId}`)
+      // 获取好友信息
+      const friendInfo = await axios.get(`${getBaseURL()}/api/user/${response.data.friendId}`);
       
+      // 添加到好友列表
       store.friends.push({
         _id: response.data.friendId,
         username: friendInfo.data.username,
-        isOnline: false // 此处可以结合WebSocket状态更新
+        isOnline: false
       });
       
       toggleAddFriend();
-      alert('添加成功！');
+      alert(`成功添加好友: ${friendInfo.data.username}`);
     }
   } catch (error) {
     let errorMessage = '添加失败，请重试';
     if (error.response) {
       switch (error.response.data.code) {
-        case 'FRIEND_NOT_FOUND':
-          errorMessage = '用户不存在';
-          break;
-        case 'ALREADY_FRIENDS':
-          errorMessage = '已是好友关系';
-          break;
-        case 'SELF_ADDITION':
-          errorMessage = '不能添加自己';
-          break;
+        case 'FRIEND_NOT_FOUND': errorMessage = '用户不存在'; break;
+        case 'ALREADY_FRIENDS': errorMessage = '已是好友关系'; break;
+        case 'SELF_ADDITION': errorMessage = '不能添加自己'; break;
+        default: errorMessage = error.response.data.error || errorMessage;
       }
     }
     alert(`错误: ${errorMessage}`);
     console.error('添加好友失败详情:', error.response?.data || error.message);
   }
-}
+};
   
   // 选择好友
   const selectFriend = async (friendId) => {
@@ -343,9 +368,13 @@ const toggleVoiceRecord = async () => {
   }
 }
 
-// 发送消息方法
+// ChatView.vue - 替换 sendMessage 函数
 const sendMessage = () => {
-  if (!newMessage.value.trim()) return;
+  // 确保消息是字符串且非空
+  if (typeof newMessage.value !== 'string' || !newMessage.value.trim()) {
+    console.warn('发送消息失败: 消息为空或非字符串');
+    return;
+  }
   
   // 创建临时消息（立即显示）
   const tempMessage = {
@@ -360,14 +389,12 @@ const sendMessage = () => {
   
   // 添加到消息列表
   store.messages.push(tempMessage);
-  newMessage.value = '';
   
   // 通过 store 发送消息
-  store.sendMessage({
-    type: 'text',
-    content: newMessage.value.trim(),
-    to: store.currentChat
-  });
+  store.sendMessage(newMessage.value.trim());
+  
+  // 清空输入框
+  newMessage.value = '';
 };
   
   // 时间格式化
