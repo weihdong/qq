@@ -41,23 +41,55 @@
         </div>
         </div>
   
+      
       <!-- 聊天区域 -->
-<!-- 模板需要调整为 -->
       <div class="chat-area" ref="chatArea">
-         <div 
-            v-for="msg in store.messages"
-            :key="msg._id"
-            :class="['message-container', { 'own-message': msg.from === userId }]"
+        <div 
+          v-for="msg in store.messages"
+          :key="msg._id"
+          :class="['message-container', { 'own-message': msg.from === userId }]"
         >
-         <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-         <div class="message-bubble">
-           <div class="message-content">{{ msg.content }}</div>
+          <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+          <div class="message-bubble">
+            <!-- 文本消息 -->
+            <div v-if="!msg.type || msg.type === 'text'" class="message-content">
+              {{ msg.content }}
+            </div>
+            
+            <!-- 图片消息 -->
+            <img 
+              v-else-if="msg.type === 'image'" 
+              :src="msg.content" 
+              class="message-image"
+              alt="图片"
+            >
+            
+            <!-- 语音消息 -->
+            <div v-else-if="msg.type === 'audio'" class="audio-message">
+              <audio :src="msg.content" controls class="audio-player"></audio>
+            </div>
+          </div>
         </div>
-       </div>
       </div>
-  
       <!-- 底栏 -->
       <div class="footer">
+        <!-- 新增图片上传按钮 -->
+        <label for="image-upload" class="footer-btn">
+          <span class="icon">🖼️</span>
+        </label>
+        <input 
+          id="image-upload" 
+          type="file" 
+          accept="image/*" 
+          style="display: none"
+          @change="handleImageUpload"
+        >
+        
+        <!-- 新增语音消息按钮 -->
+        <button class="footer-btn" @click="toggleVoiceRecord">
+          <span class="icon">{{ isRecording ? '⏹️' : '🎤' }}</span>
+        </button>
+        
         <input
           v-model="newMessage"
           @keyup.enter="sendMessage"
@@ -251,6 +283,130 @@ const addFriend = async () => {
     await store.loadMessages()
   }
   
+// 新增响应式变量
+const isRecording = ref(false)
+let mediaRecorder = null
+let audioChunks = ref([])
+
+// 图片上传处理
+const handleImageUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  try {
+    // 检查文件类型
+    if (!file.type.match('image.*')) {
+      alert('请选择图片文件')
+      return
+    }
+    
+    // 限制图片大小 (例如2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('图片大小不能超过2MB')
+      return
+    }
+    
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      // 获取Base64编码的图片
+      const base64Image = e.target.result
+      
+      // 发送图片消息
+      if (store.ws && store.ws.readyState === WebSocket.OPEN) {
+        const message = {
+          type: 'image',
+          from: userId,
+          to: store.currentChat,
+          content: base64Image,
+          timestamp: new Date().toISOString()
+        }
+        
+        store.ws.send(JSON.stringify(message))
+        store.messages.push(message)
+      } else {
+        console.error('WebSocket连接未就绪')
+        alert('发送失败，请检查网络连接')
+      }
+    }
+    
+    reader.readAsDataURL(file)
+    // 重置input，允许再次选择同一文件
+    event.target.value = ''
+  } catch (error) {
+    console.error('图片上传失败:', error)
+    alert('图片上传失败')
+  }
+}
+
+// 语音录制功能
+const toggleVoiceRecord = async () => {
+  if (isRecording.value) {
+    // 停止录音
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop()
+    }
+    isRecording.value = false
+    return
+  }
+  
+  try {
+    // 请求麦克风权限
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks.value = []
+    
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.value.push(event.data)
+      }
+    }
+    
+    mediaRecorder.onstop = async () => {
+      // 合并音频片段
+      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' })
+      
+      // 转换为Base64
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64Audio = reader.result
+        
+        // 发送语音消息
+        if (store.ws && store.ws.readyState === WebSocket.OPEN) {
+          const message = {
+            type: 'audio',
+            from: userId,
+            to: store.currentChat,
+            content: base64Audio,
+            timestamp: new Date().toISOString()
+          }
+          
+          store.ws.send(JSON.stringify(message))
+          store.messages.push(message)
+        }
+      }
+      
+      reader.readAsDataURL(audioBlob)
+      
+      // 关闭媒体流
+      stream.getTracks().forEach(track => track.stop())
+    }
+    
+    // 开始录音
+    mediaRecorder.start()
+    isRecording.value = true
+    
+    // 设置60秒自动停止
+    setTimeout(() => {
+      if (isRecording.value) {
+        toggleVoiceRecord()
+      }
+    }, 60000)
+  } catch (error) {
+    console.error('无法访问麦克风:', error)
+    alert('无法访问麦克风，请检查权限设置')
+  }
+}
+
   // 发送消息（增强版）
   const sendMessage = () => {
     if (!newMessage.value.trim()) return
@@ -601,6 +757,49 @@ const addFriend = async () => {
 .footer button:hover {
   background: var(--primary-dark);
 }
+
+/* 底栏按钮样式 */
+.footer-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0 5px;
+  transition: background 0.3s;
+}
+
+.footer-btn:hover {
+  background: #e0e0e0;
+}
+
+.footer-btn .icon {
+  font-size: 18px;
+}
+
+/* 图片消息样式 */
+.message-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 10px;
+  display: block;
+}
+
+/* 语音消息样式 */
+.audio-message {
+  display: flex;
+  align-items: center;
+}
+
+.audio-player {
+  flex: 1;
+  height: 40px;
+}
+
 
 /* 头像基础样式 */
 .avatar-circle {
