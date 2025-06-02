@@ -72,10 +72,17 @@
         </div>
       </div>
       <!-- 底栏 -->
-      <div class="footer">
+      <div class="footer">     
+        <input
+          v-model="newMessage"
+          @keyup.enter="sendMessage"
+          :placeholder="currentPlaceholder"
+        >
+        <button @click="sendMessage">发送</button>
+        
         <!-- 新增图片上传按钮 -->
         <label for="image-upload" class="footer-btn">
-          <span class="icon">🖼️</span>
+          <span class="icon">🌁</span>
         </label>
         <input 
           id="image-upload" 
@@ -89,13 +96,6 @@
         <button class="footer-btn" @click="toggleVoiceRecord">
           <span class="icon">{{ isRecording ? '⏹️' : '🎤' }}</span>
         </button>
-        
-        <input
-          v-model="newMessage"
-          @keyup.enter="sendMessage"
-          :placeholder="currentPlaceholder"
-        >
-        <button @click="sendMessage">发送</button>
       </div>
     </div>
   </template>
@@ -157,25 +157,27 @@ const connectWebSocket = () => {
     }, 25000)
   }
   
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data)
-        switch (message.type) {
-          case 'message':
-            store.messages.push(message)
-            break
-          case 'status':
-            const friend = store.friends.find(f => f._id === message.userId)
-            if (friend) friend.isOnline = message.online
-            break
-          case 'system':
-            console.log('系统消息:', message.message)
-            break
-        }
-      } catch (error) {
-        console.error('消息解析错误:', error)
+  ws.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data)
+      switch (message.type) {
+        case 'text':   // 处理文本消息
+        case 'image':  // 处理图片消息
+        case 'audio':  // 处理语音消息
+          store.messages.push(message)
+          break
+        case 'status':
+          const friend = store.friends.find(f => f._id === message.userId)
+          if (friend) friend.isOnline = message.online
+          break
+        case 'system':
+          console.log('系统消息:', message.message)
+          break
       }
+    } catch (error) {
+      console.error('消息解析错误:', error)
     }
+  }
   
   // 新增：在收到关闭事件时尝试立即重连
   ws.onclose = (event) => {
@@ -420,7 +422,7 @@ const toggleVoiceRecord = async () => {
   
     try {
       const message = {
-        type: 'message',
+        type: 'test',
         from: userId,
         to: store.currentChat,
         content: newMessage.value.trim(),
