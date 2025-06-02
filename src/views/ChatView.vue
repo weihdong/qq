@@ -78,8 +78,6 @@
           @keyup.enter="sendMessage"
           :placeholder="currentPlaceholder"
         >
-        <button @click="sendMessage">发送</button>
-        
         <!-- 新增图片上传按钮 -->
         <label for="image-upload" class="footer-btn">
           <span class="icon">🌁</span>
@@ -97,6 +95,7 @@
           <span class="icon">{{ isRecording ? '⏹️' : '🎤' }}</span>
         </button>
       </div>
+        <button @click="sendMessage">发送</button>
     </div>
   </template>
   
