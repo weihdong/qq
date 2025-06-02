@@ -135,11 +135,7 @@ onMounted(() => {
   console.log('网络状态:', isOnline.value ? '在线' : '离线');
 });
 
-onUnmounted(() => {
-  window.removeEventListener('online', handleOnline);
-  window.removeEventListener('offline', handleOffline);
-});
-  
+
   // WebSocket 连接管理
   let reconnectAttempts = 0
   const MAX_RECONNECT_ATTEMPTS = 5
