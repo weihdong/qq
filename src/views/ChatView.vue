@@ -422,7 +422,7 @@ const toggleVoiceRecord = async () => {
   
     try {
       const message = {
-        type: 'test',
+        type: 'text',
         from: userId,
         to: store.currentChat,
         content: newMessage.value.trim(),
