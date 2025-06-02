@@ -408,33 +408,28 @@ const toggleVoiceRecord = async () => {
   }
 }
 
-  // 发送消息（增强版）
-  const sendMessage = () => {
-    if (!newMessage.value.trim()) return
+// 发送消息方法
+const sendMessage = () => {
+  if (!newMessage.value.trim()) return;
   
-    if (!store.ws || store.ws.readyState !== WebSocket.OPEN) {
-      console.log('连接未就绪，尝试重新发送...')
-      store.ws = connectWebSocket()
-      setTimeout(sendMessage, 500)
-      return
-    }
+  // 创建临时消息（立即显示）
+  const tempMessage = {
+    _id: `temp_${Date.now()}`,
+    type: 'text',
+    from: userId,
+    to: store.currentChat,
+    content: newMessage.value.trim(),
+    timestamp: new Date().toISOString(),
+    isTemp: true
+  };
   
-    try {
-      const message = {
-        type: 'text',
-        from: userId,
-        to: store.currentChat,
-        content: newMessage.value.trim(),
-        timestamp: new Date().toISOString()
-      }
-      
-      store.ws.send(JSON.stringify(message))
-      newMessage.value = ''
-    } catch (error) {
-      console.error('发送消息失败:', error)
-      alert('消息发送失败，请检查网络连接')
-    }
-  }
+  // 添加到消息列表
+  store.messages.push(tempMessage);
+  newMessage.value = '';
+  
+  // 通过 store 发送消息
+  store.sendMessage(tempMessage.content);
+};
   
   // 时间格式化
   const formatTime = (timestamp) => {
@@ -456,25 +451,22 @@ const toggleVoiceRecord = async () => {
     }
   }, { deep: true })
   
-  // 初始化加载
-  onMounted(async () => {
-    try {
-      // 加载好友列表
-      const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
-        params: { userId }
-      })
-      store.friends = friendsRes.data.friends.map(f => ({
-        ...f,
-        isOnline: false // 初始状态设为离线
-      }))
-  
-      // 建立WebSocket连接
-      store.ws = connectWebSocket()
-    } catch (error) {
-      console.error('初始化失败:', error)
-      alert('初始化失败，请刷新页面重试')
+// 在 onMounted 中初始化
+onMounted(async () => {
+  try {
+    await store.loadFriends();
+    
+    // 统一使用 store 的 socket
+    store.connectWebSocket(userId);
+    
+    // 加载当前聊天消息（如果有）
+    if (store.currentChat) {
+      await store.loadMessages();
     }
-  })
+  } catch (error) {
+    console.error('初始化失败:', error);
+  }
+});
   </script>
   
   <!-- 样式保持不变 -->

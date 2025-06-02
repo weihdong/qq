@@ -17,78 +17,117 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   // 方法
-  const connectWebSocket = (userId) => {
-    const WS_URL = import.meta.env.VITE_WS_URL
 
-    const pingInterval = 25000;
-    socket.value = new WebSocket(`${WS_URL}?userId=${userId}`)
-    socket.value.error = (error) => {
-        console.error('WebSocket错误:', error);
-        setTimeout(() => connectWebSocket(userId), 3000);
-    }
-    socket.value.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      
-      // 处理消息
-      if (!data.type) { // 普通消息
-        if (data.from === currentChat.value || data.to === currentChat.value) {
-          messages.value.push({
-            ...data,
-            timestamp: new Date(data.timestamp)
-          })
-        }
-        return
-      }
-
-      // 处理状态更新
-      if (data.type === 'status-update') {
-        const friend = friends.value.find(f => f._id === data.userId)
-        if (friend) {
-          friend.isOnline = data.status
-          friends.value = [...friends.value] // 触发响应式更新
-        }
-      }
-    }
-
+// 更新 connectWebSocket 方法
+const connectWebSocket = (userId) => {
+  const WS_URL = import.meta.env.VITE_WS_URL;
+  
+  // 关闭现有连接
+  if (socket.value) {
+    socket.value.close();
+  }
+  
+  socket.value = new WebSocket(`${WS_URL}?userId=${userId}`);
+  
+  socket.value.onopen = () => {
+    console.log('WebSocket连接成功');
+    // 发送连接确认
+    socket.value.send(JSON.stringify({
+      type: 'connect',
+      userId
+    }));
+    
     // 心跳检测
-    const heartbeat = setInterval(() => {
+    heartbeatInterval = setInterval(() => {
       if (socket.value.readyState === WebSocket.OPEN) {
-        socket.value.send('{}');
+        socket.value.send(JSON.stringify({ type: 'ping' }));
       }
-    }, pingInterval);
-
-    // 清理
-    socket.value.onclose = () => {
-      clearInterval(heartbeat);
-    };
-  }
-
-  const sendMessage = (content) => {
-    if (!content.trim() || !currentChat.value) return
-    const msg = {
-      from: localStorage.getItem('userId'),
-      to: currentChat.value,
-      content: content.trim()
+    }, 25000);
+  };
+  
+  socket.value.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    
+    // 处理心跳响应
+    if (data.type === 'pong') return;
+    
+    // 处理状态更新
+    if (data.type === 'status-update') {
+      const friend = friends.value.find(f => f._id === data.userId);
+      if (friend) {
+        friend.isOnline = data.status;
+        friends.value = [...friends.value]; // 触发响应式更新
+      }
+      return;
     }
-    socket.value.send(JSON.stringify(msg))
-  }
+    
+    // 处理普通消息
+    messages.value.push({
+      ...data,
+      timestamp: new Date(data.timestamp)
+    });
+  };
+  
+  socket.value.onerror = (error) => {
+    console.error('WebSocket错误:', error);
+    setTimeout(() => connectWebSocket(userId), 3000);
+  };
+  
+  socket.value.onclose = () => {
+    clearInterval(heartbeatInterval);
+    console.log('WebSocket连接关闭');
+  };
+  
+  return socket.value;
+};
 
-  const loadMessages = async () => {
-    try {
-      const res = await axios.get(`${getBaseURL()}/api/messages`, {
-        params: {
-          from: localStorage.getItem('userId'),
-          to: currentChat.value
-        }
-      })
-      messages.value = res.data.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp)
-      }))
-    } catch (error) {
-      console.error('加载消息失败:', error)
-    }
+// 添加 clearMessages 方法
+const clearMessages = () => {
+  messages.value = [];
+};
+
+// 更新 loadMessages 方法
+const loadMessages = async () => {
+  if (!currentChat.value) return;
+  
+  try {
+    const res = await axios.get(`${getBaseURL()}/api/messages`, {
+      params: {
+        from: localStorage.getItem('userId'),
+        to: currentChat.value
+      }
+    });
+    
+    messages.value = res.data.map(msg => ({
+      ...msg,
+      _id: msg._id.toString(), // 确保 ID 是字符串
+      from: msg.from.toString(),
+      to: msg.to.toString(),
+      timestamp: new Date(msg.timestamp)
+    }));
+  } catch (error) {
+    console.error('加载消息失败:', error);
   }
+};
+
+// 更新 sendMessage 方法
+const sendMessage = (content) => {
+  if (!content.trim() || !currentChat.value) return;
+  
+  const msg = {
+    type: 'text',
+    from: localStorage.getItem('userId'),
+    to: currentChat.value,
+    content: content.trim(),
+    timestamp: new Date().toISOString()
+  };
+  
+  if (socket.value && socket.value.readyState === WebSocket.OPEN) {
+    socket.value.send(JSON.stringify(msg));
+  } else {
+    console.error('WebSocket连接未就绪');
+  }
+};
 
   const loadFriends = async () => {
     try {
