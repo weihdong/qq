@@ -152,16 +152,21 @@ const sendMessage = (content, type = 'text', fileData = null) => {
         params: { userId: localStorage.getItem('userId') }
       })
       
-      // 初始化在线状态
-      friends.value = res.data.map(friend => ({
-        ...friend,
-        isOnline: false // 默认离线，等待WebSocket更新
-      }))
+      if (Array.isArray(res.data)) {
+        // 初始化在线状态
+        friends.value = res.data.map(friend => ({
+          ...friend,
+          isOnline: false // 默认离线，等待WebSocket更新
+        }))
+      } else {
+        console.error('返回的数据格式不正确，期望是数组', res.data);
+      }
       
     } catch (error) {
       console.error('加载好友失败:', error)
     }
   }
+  
 
   return {
     currentChat,
