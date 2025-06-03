@@ -63,12 +63,13 @@ export const useChatStore = defineStore('chat', () => {
     };
   }
 
-  const sendMessage = (content) => {
-    if (!content.trim() || !currentChat.value) return
+  const sendMessage = (content, type = 'text') => {
+    if (!content || !currentChat.value) return
     const msg = {
+      type, // 新增消息类型
       from: localStorage.getItem('userId'),
       to: currentChat.value,
-      content: content.trim()
+      content: content
     }
     socket.value.send(JSON.stringify(msg))
   }
