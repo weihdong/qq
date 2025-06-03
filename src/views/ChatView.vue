@@ -54,19 +54,22 @@
           <div class="message-content">
             {{ msg.content }}
             <!-- 渲染附件 -->
-            <template v-if="msg.attachments && msg.attachments.length">
-              <div v-for="attachmentId in msg.attachments" :key="attachmentId">
-                <template v-if="attachment.type === 'image'">
-                  <img :src="getAttachmentUrl(attachmentId)" alt="图片">
+            <template v-if="msg.attachmentsData && msg.attachmentsData.length">
+              <div v-for="attachment in msg.attachmentsData" :key="attachment.id">
+                <template v-if="attachment.type.startsWith('image')">
+                  <img :src="`data:${attachment.type};base64,${attachment.data.toString('base64')}`" 
+                      alt="图片" 
+                      style="max-width: 200px; height: auto;">
                 </template>
-                <template v-if="attachment.type === 'voice'">
-                  <audio controls :src="getAttachmentUrl(attachmentId)"></audio>
+                <template v-else-if="attachment.type.startsWith('audio')">
+                  <audio controls :src="`data:${attachment.type};base64,${attachment.data.toString('base64')}`"></audio>
                 </template>
               </div>
             </template>
           </div>
         </div>
       </div>
+
 
     </div>
 
@@ -648,6 +651,17 @@ word-break: break-word;
 line-height: 1.4;
 box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 max-width: 480px; /* 最大宽度限制 */
+}
+.message-bubble img {
+  max-width: 200px;
+  height: auto;
+  margin: 5px 0;
+  border-radius: 8px;
+}
+
+.message-bubble audio {
+  width: 100%;
+  margin: 5px 0;
 }
 
 .message-container.own-message .message-bubble {
