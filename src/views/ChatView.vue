@@ -182,35 +182,35 @@ const triggerFileInput = () => {
   fileInput.value.click()
 }
 
-// 处理图片上传
+// 修改后的图片上传方法
 const handleImageUpload = async (e) => {
-  const file = e.target.files[0]
-  if (!file) return
+  const file = e.target.files[0];
+  if (!file) return;
   
   try {
     // 创建预览URL
-    const previewUrl = URL.createObjectURL(file)
-    showImagePreview(previewUrl)
+    const previewUrl = URL.createObjectURL(file);
+    showImagePreview(previewUrl);
     
     // 上传图片到服务器
-    const formData = new FormData()
-    formData.append('image', file)
+    const formData = new FormData();
+    formData.append('file', file); // 修改字段名为 'file'
     
     const response = await axios.post(`${getBaseURL()}/api/upload`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
-    })
+    });
     
     // 发送图片消息
-    sendMessage(response.data.url, 'image')
+    sendMessage(response.data.url, 'image');
     
   } catch (error) {
-    console.error('图片上传失败:', error)
-    alert('图片上传失败')
+    console.error('图片上传失败:', error);
+    alert(`图片上传失败: ${error.response?.data?.error || error.message}`);
   } finally {
     // 重置文件输入
-    e.target.value = ''
+    e.target.value = '';
   }
 }
 
@@ -270,12 +270,30 @@ const startRecording = async () => {
   }
 }
 
-// 停止录音
+// 修改后的语音上传方法
 const stopRecording = () => {
   if (isRecording.value && mediaRecorder.value) {
-    mediaRecorder.value.stop()
-    isRecording.value = false
-    clearInterval(recordingTimer.value)
+    mediaRecorder.value.stop();
+    isRecording.value = false;
+    clearInterval(recordingTimer.value);
+    
+    // 创建FormData上传
+    const audioBlob = new Blob(audioChunks.value, { type: 'audio/mpeg' });
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.mp3'); // 修改字段名为 'file'
+    
+    axios.post(`${getBaseURL()}/api/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    .then(response => {
+      sendMessage(response.data.url, 'audio');
+    })
+    .catch(error => {
+      console.error('音频上传失败:', error);
+      alert(`音频上传失败: ${error.response?.data?.error || error.message}`);
+    });
   }
 }
 
