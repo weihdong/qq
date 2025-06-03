@@ -132,12 +132,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, nextTick, watch, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
 // 添加新的导入
-import { ref, onMounted, onUnmounted } from 'vue';
 
 // 添加新变量
 const isRecording = ref(false);
