@@ -42,8 +42,7 @@
       </div>
 
     <!-- 聊天区域 -->
-  <!-- ...其他代码... -->
-  <div class="chat-area" ref="chatArea">
+    <div class="chat-area" ref="chatArea">
     <div 
       v-for="msg in store.messages"
       :key="msg._id"
@@ -56,21 +55,23 @@
           {{ msg.content }}
         </div>
         
-        <!-- 图片消息 -->
+        <!-- 图片消息 - 修复图片URL -->
         <div v-else-if="msg.type === 'image'">
           <img 
-            :src="msg.content" 
+            :src="getFullUrl(msg.content)" 
             alt="图片消息"
-            @load="scrollToBottom"
+            style="max-width: 300px; max-height: 300px; border-radius: 8px;"
           />
+          <div v-if="!msg.content">图片加载失败</div>
         </div>
         
-        <!-- 语音消息 -->
+        <!-- 语音消息 - 修复播放器 -->
         <div v-else-if="msg.type === 'audio'" class="audio-message">
           <audio controls class="audio-player">
-            <source :src="msg.content" type="audio/webm">
+            <source :src="getFullUrl(msg.content)" type="audio/webm">
             您的浏览器不支持音频播放
           </audio>
+          <div v-if="!msg.content">音频加载失败</div>
         </div>
       </div>
     </div>
@@ -225,7 +226,7 @@ const stopRecording = () => {
   }
 };
 
-// 新增方法 - 上传音频
+// 1. 修复语音录制和上传
 const uploadAudio = async (audioBlob) => {
   try {
     const formData = new FormData();
@@ -236,15 +237,20 @@ const uploadAudio = async (audioBlob) => {
     });
     
     if (response.data.url) {
-      sendMediaMessage(response.data.url, 'audio');
+      // 确保使用完整URL
+      const fullUrl = response.data.url.startsWith('http') 
+        ? response.data.url 
+        : `${getBaseURL()}${response.data.url}`;
+      
+      sendMediaMessage(fullUrl, 'audio');
     }
   } catch (error) {
     console.error('音频上传失败:', error);
-    alert('音频上传失败');
+    alert('音频上传失败: ' + (error.response?.data?.error || error.message));
   }
 };
 
-// 新增方法 - 发送多媒体消息
+// 2. 修复消息发送
 const sendMediaMessage = (url, mediaType) => {
   if (!store.currentChat) return;
   
@@ -252,22 +258,31 @@ const sendMediaMessage = (url, mediaType) => {
     type: mediaType,
     from: userId,
     to: store.currentChat,
-    content: url
+    content: url,
+    timestamp: new Date().toISOString()
   };
   
   if (store.ws && store.ws.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify(msg));
     
-    // 添加到本地消息列表
+    // 修复: 立即添加到本地消息列表
     store.messages.push({
       ...msg,
-      timestamp: new Date(),
-      _id: `temp-${Date.now()}`
+      _id: `temp-${Date.now()}`,
+      timestamp: new Date(msg.timestamp)
     });
   } else {
     console.error('WebSocket连接未就绪');
     alert('发送失败，请检查网络连接');
   }
+};
+// 3. 添加辅助函数获取完整URL
+const getFullUrl = (path) => {
+  if (!path) return '';
+  // 如果已经是完整URL，直接返回
+  if (path.startsWith('http')) return path;
+  // 否则拼接基础URL
+  return `${getBaseURL()}${path}`;
 };
 // WebSocket 连接管理
 let reconnectAttempts = 0
@@ -676,7 +691,7 @@ flex-direction: column;
 /* 消息容器 */
 .message-container {
 position: relative;
-max-width: 80%;
+max-width: 85%;
 margin: 14px 0px;
 align-self: flex-start; /* 默认接收消息在左边 */
 }
@@ -861,11 +876,66 @@ background: var(--primary-dark);
   margin-bottom: 10px;
   animation: blink 1s infinite;
 }
+/* 修复消息布局 */
+.message-container {
+  max-width: 85%;
+  margin-bottom: 24px;
+}
 
-@keyframes blink {
-  0% { opacity: 1; }
-  50% { opacity: 0.3; }
-  100% { opacity: 1; }
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #f0f0f0;
+}
+
+.own-message .message-bubble {
+  background: #4e8cff;
+  color: white;
+}
+
+/* 图片消息样式 */
+img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-top: 8px;
+  border: 1px solid #eee;
+}
+
+/* 音频播放器样式 */
+.audio-message {
+  padding: 12px;
+  background: #f8f8f8;
+  border-radius: 24px;
+}
+
+.audio-player {
+  width: 100%;
+  height: 40px;
+}
+
+/* 录音按钮样式 */
+.record-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  border: 1px solid #ddd;
+}
+
+.record-btn.recording {
+  background: #ff4d4f;
+  color: white;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
 /* 头像基础样式 */
