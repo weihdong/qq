@@ -176,7 +176,6 @@ ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     switch (message.type) {
       case 'message':
-        // 处理消息，特别是包含附件的情况
         handleIncomingMessage(message);
         break;
       case 'status':
@@ -194,16 +193,15 @@ ws.onmessage = (event) => {
   }
 };
 
-// 新增消息处理函数
 async function handleIncomingMessage(message) {
   try {
-    // 检查是否需要处理附件
     if (message.attachments && message.attachments.length > 0) {
-      // 获取所有附件数据
       const attachments = await Promise.all(
         message.attachments.map(async (attachmentId) => {
           try {
-            const response = await axios.get(`${getBaseURL()}/api/attachment/${attachmentId}`);
+            const response = await axios.get(
+              `${getBaseURL()}/api/attachment/${attachmentId}`
+            );
             return {
               id: attachmentId,
               type: response.headers['content-type'],
@@ -214,18 +212,18 @@ async function handleIncomingMessage(message) {
             return null;
           }
         })
-      ).then(attachments => attachments.filter(Boolean)); // 过滤掉失败的附件
+      ).then(attachments => attachments.filter(Boolean));
 
-      // 将附件数据附加到消息对象
       message.attachmentsData = attachments;
     }
 
-    // 将消息添加到消息列表
     store.messages.push(message);
+    console.log('消息已接收:', message);
   } catch (error) {
     console.error('处理消息时出错:', error);
   }
 }
+
 
 
 // 新增：在收到关闭事件时尝试立即重连
@@ -366,7 +364,7 @@ const selectFriend = async (friendId) => {
 }
 
 // 发送消息（增强版）
-const sendMessage = () => {
+const sendMessage = async () => {
   if (!newMessage.value.trim() && !selectedAttachment.value) return;
 
   try {
@@ -381,13 +379,27 @@ const sendMessage = () => {
       timestamp: new Date().toISOString()
     };
 
-    store.ws.send(JSON.stringify(message));
+    // 发送消息
+    if (store.ws.readyState === WebSocket.OPEN) {
+      store.ws.send(JSON.stringify(message));
+      console.log('消息已发送:', message);
+    } else {
+      console.error('WebSocket连接未打开');
+      // 尝试重新连接
+      store.ws = connectWebSocket();
+      setTimeout(() => sendMessage(), 500);
+      return;
+    }
+    
+    // 清空输入
     newMessage.value = '';
     selectedAttachment.value = null;
   } catch (error) {
     console.error('发送消息失败:', error);
+    alert('消息发送失败，请检查网络连接');
   }
 }
+
 
 
 // 时间格式化
@@ -763,6 +775,74 @@ border-radius: 50%;
 animation: pulse 2.5s infinite;
 z-index: -1;
 }
+
+/* 附件上传按钮样式 */
+.attachment-upload {
+  display: inline-block;
+  cursor: pointer;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  text-align: center;
+  line-height: 44px;
+  margin-left: 12px;
+  transition: all 0.3s ease;
+}
+
+.attachment-upload:hover {
+  background-color: rgba(255, 167, 38, 0.1);
+}
+
+.attachment-upload input[type="file"] {
+  display: none;
+}
+
+.attachment-upload span {
+  font-size: 24px;
+  color: var(--primary);
+}
+
+/* 表情选择器样式 */
+.emoji-picker {
+  position: absolute;
+  bottom: 80px;
+  right: 10px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-width: 300px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+}
+
+.emoji-grid img {
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: transform 0.2s;
+}
+
+.emoji-grid img:hover {
+  transform: scale(1.1);
+}
+
+/* 确保表情按钮可见 */
+.add-btn {
+  position: fixed;
+  right: 10px;
+  top: 10px;
+  z-index: 1000;
+}
+
 
 @keyframes pulse {
 0% { transform: scale(0.9); opacity: 1; }
