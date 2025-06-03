@@ -67,10 +67,10 @@
         
         <!-- 语音消息 - 修复播放器 -->
         <div v-else-if="msg.type === 'audio'" class="audio-message">
-          <audio controls class="audio-player">
-            <source :src="getFullUrl(msg.content)" type="audio/webm">
-            您的浏览器不支持音频播放
-          </audio>
+        <audio controls class="audio-player">
+          <source :src="getFullUrl(msg.content)" type="audio/webm">
+          您的浏览器不支持音频播放
+        </audio>
           <div v-if="!msg.content">音频加载失败</div>
         </div>
       </div>
@@ -253,7 +253,7 @@ const uploadAudio = async (audioBlob) => {
 // 2. 修复消息发送
 const sendMediaMessage = (url, mediaType) => {
   if (!store.currentChat) return;
-  
+
   const msg = {
     type: mediaType,
     from: userId,
@@ -261,11 +261,9 @@ const sendMediaMessage = (url, mediaType) => {
     content: url,
     timestamp: new Date().toISOString()
   };
-  
+
   if (store.ws && store.ws.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify(msg));
-    
-    // 修复: 立即添加到本地消息列表
     store.messages.push({
       ...msg,
       _id: `temp-${Date.now()}`,
@@ -276,14 +274,17 @@ const sendMediaMessage = (url, mediaType) => {
     alert('发送失败，请检查网络连接');
   }
 };
+
 // 3. 添加辅助函数获取完整URL
+// 确保getFullUrl正确处理语音文件URL
 const getFullUrl = (path) => {
   if (!path) return '';
-  // 如果已经是完整URL，直接返回
   if (path.startsWith('http')) return path;
-  // 否则拼接基础URL
   return `${getBaseURL()}${path}`;
 };
+
+
+
 // WebSocket 连接管理
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
@@ -327,25 +328,37 @@ ws.onopen = () => {
   }, 25000)
 }
 
-  ws.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data)
-      switch (message.type) {
-        case 'message':
-          store.messages.push(message)
-          break
-        case 'status':
-          const friend = store.friends.find(f => f._id === message.userId)
-          if (friend) friend.isOnline = message.online
-          break
-        case 'system':
-          console.log('系统消息:', message.message)
-          break
-      }
-    } catch (error) {
-      console.error('消息解析错误:', error)
+// 在onmessage事件中，确保正确处理所有消息类型
+store.ws.onmessage = (event) => {
+  try {
+    const message = JSON.parse(event.data);
+    switch (message.type) {
+      case 'message':
+        // 确保消息包含_id字段
+        store.messages.push({
+          ...message,
+          _id: message._id || `received-${Date.now()}`,
+          timestamp: new Date(message.timestamp)
+        });
+        break;
+      case 'status':
+        // 更新好友在线状态
+        const friend = store.friends.find(f => f._id === message.userId);
+        if (friend) {
+          friend.isOnline = message.online;
+        }
+        break;
+      case 'system':
+        console.log('系统消息:', message.message);
+        break;
+      default:
+        console.log('未知消息类型:', message);
     }
+  } catch (error) {
+    console.error('消息解析错误:', error);
   }
+}
+
 
 // 新增：在收到关闭事件时尝试立即重连
 ws.onclose = (event) => {
