@@ -148,24 +148,25 @@ const sendMessage = (content, type = 'text', fileData = null) => {
 
   const loadFriends = async () => {
     try {
-      const res = await axios.get(`${getBaseURL()}/api/friends`, {
-        params: { userId: localStorage.getItem('userId') }
-      })
-      
-      if (Array.isArray(res.data)) {
-        // 初始化在线状态
-        friends.value = res.data.map(friend => ({
-          ...friend,
-          isOnline: false // 默认离线，等待WebSocket更新
-        }))
-      } else {
-        console.error('返回的数据格式不正确，期望是数组', res.data);
-      }
-      
+        const res = await axios.get(`${getBaseURL()}/api/friends`, {
+            params: { userId: localStorage.getItem('userId') }
+        })
+
+        if (res.data && res.data.friends && Array.isArray(res.data.friends)) {
+            // 初始化在线状态
+            friends.value = res.data.friends.map(friend => ({
+               ...friend,
+                isOnline: false // 默认离线，等待WebSocket更新
+            }))
+        } else {
+            console.error('返回的数据格式不正确,期望是包含friends数组的对象', res.data);
+        }
+
     } catch (error) {
-      console.error('加载好友失败:', error)
+        console.error('加载好友失败:', error)
     }
-  }
+}
+
   
 
   return {
