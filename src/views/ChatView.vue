@@ -460,13 +460,7 @@ const sendTextMessage = () => {
   sendMediaMessage(newMessage.value.trim(), 'text');
   newMessage.value = '';
 };
-// 消息渲染修改
-watch(() => store.messages, async () => {
-  await nextTick();
-  if (chatArea.value) {
-    chatArea.value.scrollTop = chatArea.value.scrollHeight;
-  }
-}, { deep: true });
+
 
 // 时间格式化
 const formatTime = (timestamp) => {
@@ -480,13 +474,13 @@ const formatTime = (timestamp) => {
   })
 }
 
-// 消息自动滚动
+// 消息渲染修改
 watch(() => store.messages, async () => {
-  await nextTick()
+  await nextTick();
   if (chatArea.value) {
-    chatArea.value.scrollTop = chatArea.value.scrollHeight
+    chatArea.value.scrollTop = chatArea.value.scrollHeight;
   }
-}, { deep: true })
+}, { deep: true });
 
 // 初始化加载
 onMounted(async () => {
@@ -878,13 +872,13 @@ background: var(--primary-dark);
 }
 /* 修复消息布局 */
 .message-container {
-  max-width: 85%;
+  max-width: 80%;
   margin-bottom: 24px;
 }
 
 .message-bubble {
   padding: 12px 16px;
-  border-radius: 18px;
+  border-radius: 30px;
   background: #f0f0f0;
 }
 
@@ -895,10 +889,10 @@ background: var(--primary-dark);
 
 /* 图片消息样式 */
 img {
-  max-width: 100%;
+  max-width: 90%;
   border-radius: 8px;
   margin-top: 8px;
-  border: 1px solid #eee;
+  border: 0px solid #eee;
 }
 
 /* 音频播放器样式 */
