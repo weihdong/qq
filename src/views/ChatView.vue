@@ -239,29 +239,31 @@ const logout = () => {
 // 添加方法
 const sendTextMessage = () => {
   if (newMessage.value.trim()) {
-    store.sendMessage(newMessage.value.trim());
+    const chatStore = useChatStore();
+    chatStore.sendMessage(newMessage.value.trim());
     newMessage.value = '';
   }
 };
 
 const handleImageUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  try {
-    sendButton.value = '上传中...';
-    
-    const uploadResult = await store.uploadFile(file);
-    store.sendMessage('图片消息', 'image', uploadResult);
-    
-    // 重置输入
-    e.target.value = '';
-  } catch (error) {
-    alert('图片上传失败: ' + error.message);
-  } finally {
-    sendButton.value = '发送';
-  }
-};
+     const file = e.target.files[0];
+     if (!file) return;
+     
+     try {
+       sendButton.value = '上传中...';
+       
+       // 修复：正确调用 store 方法
+       const chatStore = useChatStore();
+       const uploadResult = await chatStore.uploadFile(file);
+       chatStore.sendMessage('图片消息', 'image', uploadResult);
+       
+       e.target.value = '';
+     } catch (error) {
+       alert('图片上传失败: ' + error.message);
+     } finally {
+       sendButton.value = '发送';
+     }
+   };
 
 
 
