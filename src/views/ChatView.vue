@@ -153,6 +153,7 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
+const sendButton = ref('发送');
 
 // WebSocket 连接管理
 let reconnectAttempts = 0
