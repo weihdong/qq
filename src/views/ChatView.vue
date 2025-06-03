@@ -8,7 +8,8 @@
       
       <!-- 好友列表 -->
       <!-- 修改头像模板 -->
-      <div 
+      <template v-if="store.friends">
+        <div 
           v-for="friend in store.friends"
           :key="friend._id"
           class="avatar-circle"
@@ -18,11 +19,12 @@
               active: store.currentChat === friend._id
           }" 
           @click="selectFriend(friend._id)"
-      >
+        >
           {{ friend.username[0].toUpperCase() }}
           <!-- 在线状态指示器 -->
           <div class="status-dot"></div>
-      </div>
+        </div>
+      </template>
     </div>
 
 
@@ -130,6 +132,7 @@
   </div>
   </div>
 </template>
+
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed, onUnmounted } from 'vue'
