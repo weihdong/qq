@@ -155,6 +155,8 @@ const showAddFriendModal = ref(false)
 const newFriendName = ref('')
 const sendButton = ref('发送');
 
+
+console.log('Store:', store);
 // WebSocket 连接管理
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
