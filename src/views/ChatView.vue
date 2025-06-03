@@ -8,8 +8,7 @@
       
       <!-- 好友列表 -->
       <!-- 修改头像模板 -->
-      <template v-if="store.friends">
-        <div 
+      <div 
           v-for="friend in store.friends"
           :key="friend._id"
           class="avatar-circle"
@@ -19,12 +18,11 @@
               active: store.currentChat === friend._id
           }" 
           @click="selectFriend(friend._id)"
-        >
+      >
           {{ friend.username[0].toUpperCase() }}
           <!-- 在线状态指示器 -->
           <div class="status-dot"></div>
-        </div>
-      </template>
+      </div>
     </div>
 
 
@@ -44,67 +42,65 @@
       </div>
 
     <!-- 聊天区域 -->
-    // 修改消息显示区域
-<div class="chat-area" ref="chatArea">
-  <div 
-    v-for="msg in store.messages"
-    :key="msg._id || msg.timestamp"
-    :class="['message-container', { 'own-message': msg.from === userId }]"
-  >
-    <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-    
-    <!-- 文本消息 -->
-    <div v-if="msg.type === 'text'" class="message-bubble">
-      <div class="message-content">{{ msg.content }}</div>
-    </div>
-    
-    <!-- 图片消息 -->
-    <div v-else-if="msg.type === 'image'" class="message-image">
-      <img 
-        :src="msg.fileUrl" 
-        alt="图片消息"
-        @click="openLightbox(msg.fileUrl)"
-      >
-      <div v-if="msg.content" class="image-caption">{{ msg.content }}</div>
-    </div>
-    
-    <!-- 语音消息 -->
-    <div v-else-if="msg.type === 'audio'" class="message-audio">
-      <audio controls :src="msg.fileUrl"></audio>
-      <div class="audio-transcript" v-if="msg.content">
-        {{ msg.content }}
+  <!-- ...其他代码... -->
+  <div class="chat-area" ref="chatArea">
+    <div 
+      v-for="msg in store.messages"
+      :key="msg._id"
+      :class="['message-container', { 'own-message': msg.from === userId }]"
+    >
+      <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+      <div class="message-bubble">
+        <!-- 文本消息 -->
+        <div class="message-content" v-if="msg.type === 'text'">
+          {{ msg.content }}
+        </div>
+        
+        <!-- 图片消息 -->
+        <div v-else-if="msg.type === 'image'">
+          <img 
+            :src="msg.content" 
+            alt="图片消息"
+            @load="scrollToBottom"
+          />
+        </div>
+        
+        <!-- 语音消息 -->
+        <div v-else-if="msg.type === 'audio'" class="audio-message">
+          <audio controls class="audio-player">
+            <source :src="msg.content" type="audio/webm">
+            您的浏览器不支持音频播放
+          </audio>
+        </div>
       </div>
-      <div class="audio-duration">{{ msg.duration.toFixed(1) }}秒</div>
     </div>
   </div>
-</div>
+  <!-- ...其他代码... -->
 
-    <!-- 底栏 -->
-   <!-- 修改底栏区域 -->
+      <!-- 底栏 - 添加多媒体按钮 -->
   <div class="footer">
-    <!-- 图片上传按钮 -->
-    <label for="image-upload" class="footer-icon">
-      📷
-      <input 
-        id="image-upload" 
-        type="file" 
-        accept="image/*" 
-        @change="handleImageUpload"
-        style="display: none;"
-      >
-    </label>
-    
     <!-- 语音录制按钮 -->
     <button 
-      class="footer-icon"
+      class="record-btn"
       @mousedown="startRecording"
       @mouseup="stopRecording"
       @touchstart="startRecording"
       @touchend="stopRecording"
-      :class="{ recording: isRecording }"
     >
       🎤
     </button>
+    
+    <!-- 图片选择按钮 -->
+    <label for="image-upload" class="upload-btn">
+      📷
+      <input
+        id="image-upload"
+        type="file"
+        accept="image/*"
+        @change="handleImageUpload"
+        hidden
+      >
+    </label>
     
     <!-- 消息输入框 -->
     <input
@@ -115,39 +111,24 @@
     
     <!-- 发送按钮 -->
     <button @click="sendTextMessage">发送</button>
-    
-    <!-- 音频播放器（临时显示） -->
-    <audio 
-      v-if="audioPreviewUrl" 
-      :src="audioPreviewUrl" 
-      controls
-      class="audio-preview"
-    ></audio>
   </div>
   
-  <!-- 录音指示器 -->
-  <div v-if="isRecording" class="recording-indicator">
-    <div class="pulse"></div>
-    <div>正在录音... {{ recordingDuration }}秒</div>
   </div>
-  </div>
+    <!-- ...其他代码... -->
+    <RecordingIndicator 
+    :isVisible="isRecording"
+    :duration="recordingDuration"
+    @stop="stopRecording"
+  />
 </template>
 
-
 <script setup>
-import { ref, onMounted, nextTick, watch, computed, onUnmounted } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
-// 添加新的导入
+import RecordingIndicator from './RecordingIndicator.vue'
 
-// 添加新变量
-const isRecording = ref(false);
-const mediaRecorder = ref(null);
-const audioChunks = ref([]);
-const audioPreviewUrl = ref('');
-const recordingDuration = ref(0);
-let recordingTimer = null;
 
 const router = useRouter()
 const store = useChatStore()
@@ -156,11 +137,138 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
-const sendButton = ref('发送')
-const socket = ref(null)
+// 新增状态
+const isRecording = ref(false);
+const mediaRecorder = ref(null);
+const audioChunks = ref([]);
+const recordingTimer = ref(null);
+const recordingDuration = ref(0);
 
+// 新增方法 - 处理图片上传
+const handleImageUpload = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await axios.post(`${getBaseURL()}/api/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    
+    if (response.data.url) {
+      sendMediaMessage(response.data.url, 'image');
+    }
+  } catch (error) {
+    console.error('图片上传失败:', error);
+    alert('图片上传失败');
+  } finally {
+    // 重置input允许重复选择相同文件
+    event.target.value = '';
+  }
+};
 
-console.log('Store:', store);
+// 新增方法 - 开始录音
+const startRecording = () => {
+  if (isRecording.value) return;
+  
+  if (!navigator.mediaDevices) {
+    alert('您的浏览器不支持录音功能');
+    return;
+  }
+  
+  audioChunks.value = [];
+  recordingDuration.value = 0;
+  
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      isRecording.value = true;
+      mediaRecorder.value = new MediaRecorder(stream);
+      
+      mediaRecorder.value.ondataavailable = event => {
+        audioChunks.value.push(event.data);
+      };
+      
+      mediaRecorder.value.onstop = async () => {
+        const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' });
+        await uploadAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.value.start();
+      
+      // 设置录音计时器
+      recordingTimer.value = setInterval(() => {
+        recordingDuration.value++;
+        // 最长录制60秒
+        if (recordingDuration.value >= 60) {
+          stopRecording();
+        }
+      }, 1000);
+    })
+    .catch(error => {
+      console.error('获取麦克风权限失败:', error);
+      alert('无法访问麦克风，请检查权限设置');
+    });
+};
+
+// 新增方法 - 停止录音
+const stopRecording = () => {
+  if (!isRecording.value) return;
+  
+  isRecording.value = false;
+  clearInterval(recordingTimer.value);
+  
+  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+    mediaRecorder.value.stop();
+  }
+};
+
+// 新增方法 - 上传音频
+const uploadAudio = async (audioBlob) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBlob, `recording-${Date.now()}.webm`);
+    
+    const response = await axios.post(`${getBaseURL()}/api/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    
+    if (response.data.url) {
+      sendMediaMessage(response.data.url, 'audio');
+    }
+  } catch (error) {
+    console.error('音频上传失败:', error);
+    alert('音频上传失败');
+  }
+};
+
+// 新增方法 - 发送多媒体消息
+const sendMediaMessage = (url, mediaType) => {
+  if (!store.currentChat) return;
+  
+  const msg = {
+    type: mediaType,
+    from: userId,
+    to: store.currentChat,
+    content: url
+  };
+  
+  if (store.ws && store.ws.readyState === WebSocket.OPEN) {
+    store.ws.send(JSON.stringify(msg));
+    
+    // 添加到本地消息列表
+    store.messages.push({
+      ...msg,
+      timestamp: new Date(),
+      _id: `temp-${Date.now()}`
+    });
+  } else {
+    console.error('WebSocket连接未就绪');
+    alert('发送失败，请检查网络连接');
+  }
+};
 // WebSocket 连接管理
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
@@ -177,24 +285,32 @@ const getWsURL = () => {
     : 'ws://localhost:3000'
 }
 
-// 修复 WebSocket 连接
+// WebSocket 连接管理（优化重连逻辑）
 const connectWebSocket = () => {
-  const ws = new WebSocket(getWsURL())
-  let heartbeatInterval
+const ws = new WebSocket(getWsURL())
+let heartbeatInterval
 
-  ws.onopen = () => {
-    console.log('WebSocket连接成功')
+const sendConnect = () => {
+  if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'connect',
       userId: localStorage.getItem('userId')
     }))
-    
-    heartbeatInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ping' }))
-      }
-    }, 25000)
   }
+}
+
+ws.onopen = () => {
+  console.log('WebSocket连接成功')
+  reconnectAttempts = 0
+  sendConnect()
+  
+  // 心跳机制（每25秒发送一次）
+  heartbeatInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }))
+    }
+  }, 25000)
+}
 
   ws.onmessage = (event) => {
     try {
@@ -216,16 +332,33 @@ const connectWebSocket = () => {
     }
   }
 
-  ws.onclose = (event) => {
-    console.log('连接关闭，代码:', event.code, '原因:', event.reason)
-    clearInterval(heartbeatInterval)
+// 新增：在收到关闭事件时尝试立即重连
+ws.onclose = (event) => {
+  console.log('连接关闭，代码:', event.code, '原因:', event.reason)
+  clearInterval(heartbeatInterval)
+  
+  // 立即尝试重连（指数退避）
+  const reconnect = () => {
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      console.log(`尝试第 ${reconnectAttempts + 1} 次重连...`)
+      store.ws = connectWebSocket()
+      reconnectAttempts++
+    }
   }
+  
+  // 首次立即重连，后续使用延迟
+  if (reconnectAttempts === 0) {
+    reconnect()
+  } else {
+    const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
+    setTimeout(reconnect, delay)
+  }
+}
 
   ws.onerror = (error) => {
     console.error('WebSocket错误:', error)
   }
 
-  socket.value = ws
   return ws
 }
 
@@ -235,126 +368,6 @@ const logout = () => {
   localStorage.removeItem('username')
   router.push('/login')
 }
-
-// 添加方法
-const sendTextMessage = () => {
-  if (newMessage.value.trim()) {
-    const chatStore = useChatStore();
-    chatStore.sendMessage(newMessage.value.trim());
-    newMessage.value = '';
-  }
-};
-
-const handleImageUpload = async (e) => {
-     const file = e.target.files[0];
-     if (!file) return;
-     
-     try {
-       sendButton.value = '上传中...';
-       
-       // 修复：正确调用 store 方法
-       const chatStore = useChatStore();
-       const uploadResult = await chatStore.uploadFile(file);
-       chatStore.sendMessage('图片消息', 'image', uploadResult);
-       
-       e.target.value = '';
-     } catch (error) {
-       alert('图片上传失败: ' + error.message);
-     } finally {
-       sendButton.value = '发送';
-     }
-   };
-
-
-
-const startRecording = async () => {
-  if (isRecording.value) return;
-  
-  try {
-    audioChunks.value = [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder.value = new MediaRecorder(stream);
-    
-    mediaRecorder.value.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        audioChunks.value.push(e.data);
-      }
-    };
-    
-    mediaRecorder.value.onstop = async () => {
-      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' });
-      
-      // 创建预览URL
-      audioPreviewUrl.value = URL.createObjectURL(audioBlob);
-      
-      // 计算时长
-      const duration = recordingDuration.value;
-      recordingDuration.value = 0;
-      
-      try {
-        // 创建文件对象
-        const audioFile = new File([audioBlob], 'recording.webm', {
-          type: 'audio/webm'
-        });
-        
-        // 上传文件
-        const uploadResult = await store.uploadFile(audioFile, duration);
-        
-        // 发送语音消息
-        store.sendMessage(uploadResult.transcript, 'audio', {
-          ...uploadResult,
-          duration
-        });
-        
-        // 5秒后清除预览
-        setTimeout(() => {
-          audioPreviewUrl.value = '';
-          URL.revokeObjectURL(audioPreviewUrl.value);
-        }, 5000);
-      } catch (error) {
-        alert('语音消息发送失败: ' + error.message);
-      }
-      
-      // 关闭媒体流
-      stream.getTracks().forEach(track => track.stop());
-    };
-    
-    mediaRecorder.value.start();
-    isRecording.value = true;
-    
-    // 开始计时
-    recordingDuration.value = 0;
-    recordingTimer = setInterval(() => {
-      recordingDuration.value = parseFloat((recordingDuration.value + 0.1).toFixed(1));
-    }, 100);
-  } catch (error) {
-    console.error('录音启动失败:', error);
-    alert('无法访问麦克风，请检查权限设置');
-    isRecording.value = false;
-  }
-};
-
-const stopRecording = () => {
-  if (isRecording.value && mediaRecorder.value) {
-    mediaRecorder.value.stop();
-    isRecording.value = false;
-    clearInterval(recordingTimer);
-  }
-};
-
-// 添加图片预览方法
-const openLightbox = (imageUrl) => {
-  // 实现一个简单的lightbox功能
-  // 可以使用第三方库或自定义模态框
-};
-
-// 清理资源
-onUnmounted(() => {
-  stopRecording();
-  if (audioPreviewUrl.value) {
-    URL.revokeObjectURL(audioPreviewUrl.value);
-  }
-});
 
 // 添加好友功能
 const toggleAddFriend = () => {
@@ -367,7 +380,6 @@ const currentFriend = computed(() => {
 })
 
 const currentPlaceholder = computed(() => {
-  if (!store) return '加载中...' // 安全检查
   if (!store.currentChat) return '点击顶栏头像进行聊天吧！'
   return currentFriend.value
     ? `给 ${currentFriend.value.username} 发送消息`
@@ -426,35 +438,20 @@ const selectFriend = async (friendId) => {
   await store.loadMessages()
 }
 
-// 发送消息
-const sendMessage = () => {
-  if (!newMessage.value.trim()) return
-
-  const ws = socket.value || store.ws
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.log('连接未就绪，尝试重新发送...')
-    store.ws = connectWebSocket()
-    setTimeout(sendMessage, 500)
-    return
+// 修改方法 - 重命名文本消息发送
+const sendTextMessage = () => {
+  if (!newMessage.value.trim()) return;
+  
+  sendMediaMessage(newMessage.value.trim(), 'text');
+  newMessage.value = '';
+};
+// 消息渲染修改
+watch(() => store.messages, async () => {
+  await nextTick();
+  if (chatArea.value) {
+    chatArea.value.scrollTop = chatArea.value.scrollHeight;
   }
-
-  try {
-    const message = {
-      type: 'message',
-      from: userId,
-      to: store.currentChat,
-      content: newMessage.value.trim(),
-      timestamp: new Date().toISOString()
-    }
-    
-    ws.send(JSON.stringify(message))
-    newMessage.value = ''
-  } catch (error) {
-    console.error('发送消息失败:', error)
-    alert('消息发送失败，请检查网络连接')
-  }
-}
-
+}, { deep: true });
 
 // 时间格式化
 const formatTime = (timestamp) => {
@@ -479,12 +476,15 @@ watch(() => store.messages, async () => {
 // 初始化加载
 onMounted(async () => {
   try {
-    // 确保使用 store 的方法
-    await store.loadFriends()
-    
-    // 设置初始好友列表
-    if (!store.friends) store.friends = []
-    
+    // 加载好友列表
+    const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
+      params: { userId }
+    })
+    store.friends = friendsRes.data.friends.map(f => ({
+      ...f,
+      isOnline: false // 初始状态设为离线
+    }))
+
     // 建立WebSocket连接
     store.ws = connectWebSocket()
   } catch (error) {
@@ -776,148 +776,96 @@ margin-right: 4.5%;
 background: var(--primary-dark);
 }
 
-/* 添加新样式 */
+/* 新增多媒体按钮样式 */
 .footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: 64px;
-  background: gainsboro;
   display: flex;
-  gap: 10px;
   align-items: center;
-  padding: 0 10px;
-  border-top: 1px solid var(--border);
+  gap: 12px;
 }
 
-.footer-icon {
-  width: 40px;
-  height: 40px;
+.record-btn, .upload-btn {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: white;
+  border: 1px solid #ddd;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 20px;
   cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   transition: all 0.2s;
 }
 
-.footer-icon:hover {
-  background: #f0f0f0;
-  transform: scale(1.05);
+.record-btn:active, .upload-btn:active {
+  transform: scale(0.95);
 }
 
-.footer-icon.recording {
-  background: #ff4d4d;
+.record-btn.recording {
+  background: #ff4d4f;
   color: white;
   animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(255, 77, 77, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
+/* 消息气泡样式修改 */
+.message-container.own-message .message-bubble {
+  max-width: 80%;
+}
+
+.message-content img {
+  max-width: 100%;
+  border-radius: 12px;
+  margin-top: 8px;
+}
+
+.audio-message {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #f0f7ff;
+  border-radius: 20px;
+}
+
+.audio-player {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* 录音指示器 */
 .recording-indicator {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0,0,0,0.7);
   color: white;
   padding: 20px;
   border-radius: 10px;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   align-items: center;
-  z-index: 1000;
 }
 
-.pulse {
-  width: 80px;
-  height: 80px;
-  background: #ff4d4d;
+.recording-dot {
+  width: 20px;
+  height: 20px;
+  background: red;
   border-radius: 50%;
-  margin-bottom: 15px;
-  animation: pulse 2s infinite;
+  margin-bottom: 10px;
+  animation: blink 1s infinite;
 }
 
-/* 消息样式 */
-.message-image img {
-  max-width: 300px;
-  max-height: 300px;
-  border-radius: 15px;
-  cursor: zoom-in;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.message-image .image-caption {
-  margin-top: 5px;
-  font-size: 0.9em;
-  color: #666;
-}
-
-.message-audio {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.message-audio audio {
-  max-width: 250px;
-}
-
-.audio-transcript {
-  margin-top: 5px;
-  padding: 8px;
-  background: #f8f8f8;
-  border-radius: 8px;
-  font-size: 0.85em;
-  max-width: 300px;
-}
-
-.audio-duration {
-  font-size: 0.8em;
-  color: #777;
-  margin-top: 4px;
-}
-
-.own-message .message-audio {
-  align-items: flex-end;
-}
-
-.audio-preview {
-  position: absolute;
-  bottom: 70px;
-  width: 250px;
-  right: 10px;
-  background: white;
-  border-radius: 20px;
-  padding: 5px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-}
-
-/* 响应式调整 */
-@media (max-width: 768px) {
-  .message-image img {
-    max-width: 200px;
-    max-height: 200px;
-  }
-  
-  .footer {
-    padding: 0 5px;
-    gap: 5px;
-  }
-  
-  .footer input {
-    margin-left: 0;
-  }
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
 }
 
 /* 头像基础样式 */
