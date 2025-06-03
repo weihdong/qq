@@ -268,8 +268,6 @@ const handleImageUpload = async (e) => {
   if (!file) return;
   
   try {
-    // 显示加载状态
-    const originalButtonText = '发送';
     sendButton.value = '上传中...';
     
     const uploadResult = await store.uploadFile(file);
@@ -280,9 +278,11 @@ const handleImageUpload = async (e) => {
   } catch (error) {
     alert('图片上传失败: ' + error.message);
   } finally {
-    sendButton.value = originalButtonText;
+    sendButton.value = '发送';
   }
 };
+
+
 
 const startRecording = async () => {
   if (isRecording.value) return;
