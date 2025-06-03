@@ -55,16 +55,17 @@
             {{ msg.content }}
             <!-- 渲染附件 -->
             <template v-if="msg.attachmentsData && msg.attachmentsData.length">
-              <div v-for="attachment in msg.attachmentsData" :key="attachment.id">
-                <template v-if="attachment.type.startsWith('image')">
-                  <img :src="`data:${attachment.type};base64,${attachment.data.toString('base64')}`" 
-                      alt="图片" 
-                      style="max-width: 200px; height: auto;">
-                </template>
-                <template v-else-if="attachment.type.startsWith('audio')">
-                  <audio controls :src="`data:${attachment.type};base64,${attachment.data.toString('base64')}`"></audio>
-                </template>
-              </div>
+              // 在模板中修改附件显示逻辑
+            <div v-for="attachment in msg.attachments" :key="attachment">
+              <template v-if="attachment.type === 'image'">
+                <img :src="getAttachmentUrl(attachment.id)" 
+                    alt="图片" 
+                    class="attachment-image">
+              </template>
+              <template v-else-if="attachment.type === 'audio'">
+                <audio controls :src="getAttachmentUrl(attachment.id)" class="attachment-audio"></audio>
+              </template>
+            </div>
             </template>
           </div>
         </div>
@@ -81,6 +82,7 @@
       :placeholder="currentPlaceholder"
     >
     <button @click="sendMessage">发送</button>
+    <div class="emoji-btn" @click="toggleEmojiPicker">😊</div>
     <!-- 新增附件上传按钮 -->
     <label class="attachment-upload">
       <input
@@ -118,10 +120,10 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
+// 添加获取附件URL的方法
 const getAttachmentUrl = (attachmentId) => {
   return `${getBaseURL()}/api/attachment/${attachmentId}`;
 };
-
 const qqEmojis = [
   'https://unpkg.com/@waline/emojis@1.2.0/qq/1.png',
   // 添加更多表情链接...
@@ -144,11 +146,20 @@ const getWsURL = () => {
     : 'ws://localhost:3000'
 }
 
+
+
+
 // WebSocket 连接管理（优化重连逻辑）
 const connectWebSocket = () => {
-const ws = new WebSocket(getWsURL())
+const ws = new WebSocket(`${getWsURL()}/ws`);
 let heartbeatInterval
-
+ws.onopen = () => {
+  console.log('WebSocket连接成功')
+  reconnectAttempts = 0
+  ws.send(JSON.stringify({
+    type: 'connect',
+    userId: localStorage.getItem('userId')
+  }));
 const sendConnect = () => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
@@ -158,10 +169,7 @@ const sendConnect = () => {
   }
 }
 
-ws.onopen = () => {
-  console.log('WebSocket连接成功')
-  reconnectAttempts = 0
-  sendConnect()
+
   
   // 心跳机制（每25秒发送一次）
   heartbeatInterval = setInterval(() => {
@@ -171,27 +179,31 @@ ws.onopen = () => {
   }, 25000)
 }
 
-ws.onmessage = (event) => {
-  try {
-    const message = JSON.parse(event.data);
-    switch (message.type) {
-      case 'message':
-        handleIncomingMessage(message);
-        break;
-      case 'status':
-        const friend = store.friends.find(f => f._id === message.userId);
-        if (friend) friend.isOnline = message.online;
-        break;
-      case 'system':
-        console.log('系统消息:', message.message);
-        break;
-      default:
-        console.log('未知消息类型:', message.type);
+ws.onmessage = async (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      console.log('收到消息:', message); // 添加日志
+      
+      // 处理不同类型的消息
+      switch (message.type) {
+        case 'message':
+          // 处理新消息
+          await handleIncomingMessage(message);
+          break;
+        case 'status':
+          // 更新好友在线状态
+          store.updateFriendStatus(message.userId, message.online);
+          break;
+        case 'system':
+          console.log('系统消息:', message.message);
+          break;
+        default:
+          console.log('未知消息类型:', message);
+      }
+    } catch (error) {
+      console.error('消息解析错误:', error);
     }
-  } catch (error) {
-    console.error('消息解析错误:', error);
-  }
-};
+  };
 
 async function handleIncomingMessage(message) {
   try {
@@ -256,6 +268,7 @@ ws.onclose = (event) => {
   return ws
 }
 // 新增方法
+// 修改 handleFileUpload 函数
 const handleFileUpload = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -264,26 +277,26 @@ const handleFileUpload = async (e) => {
     const formData = new FormData();
     formData.append('file', file);
     
-    const res = await axios.post(`${getBaseURL()}/api/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
+    const res = await axios.post(`${getBaseURL()}/api/upload`, formData);
     
+    // 直接保存附件信息到消息对象
     selectedAttachment.value = {
-      type: file.type.startsWith('image') ? 'image' : 'voice',
-      id: res.data.attachmentId
+      id: res.data.attachmentId,
+      type: file.type.startsWith('image') ? 'image' : 'audio'
     };
+    
+    console.log('附件上传成功:', selectedAttachment.value);
   } catch (error) {
     console.error('上传失败:', error);
+    alert('附件上传失败');
   }
 };
-
-const insertEmoji = (e) => {
-  const emoji = e.target.src;
-  newMessage.value += ` ${emoji} `;
+// 修改表情插入方法
+const insertEmoji = (emojiUrl) => {
+  newMessage.value += ` <img src="${emojiUrl}" class="emoji-in-message" /> `;
 };
 
+// 添加表情选择器开关方法
 const toggleEmojiPicker = () => {
   showEmojiPicker.value = !showEmojiPicker.value;
 };
@@ -842,7 +855,11 @@ z-index: -1;
   top: 10px;
   z-index: 1000;
 }
-
+.emoji-in-message {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
 
 @keyframes pulse {
 0% { transform: scale(0.9); opacity: 1; }
