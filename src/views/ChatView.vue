@@ -26,65 +26,108 @@
     </div>
 
 
-    <!-- 添加好友弹窗 -->
-    <div v-if="showAddFriendModal" class="modal-mask">
-    <div class="modal">
-        <input 
-        v-model="newFriendName" 
-        placeholder="  输入用户名"
-        class="modal-input"
-        >
-        <div class="modal-actions">
-        <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
-        <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
-        </div>
-    </div>
-    </div>
-
-  <!-- 聊天区域 -->
-    <div class="chat-area" ref="chatArea">
-      <div 
-        v-for="msg in store.messages"
-        :key="msg._id"
-        :class="['message-container', { 'own-message': msg.from === userId }]"
-      >
-        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-        <div class="message-bubble">
-          <div class="message-content">
-            <template v-if="msg.type === 'image'">
-              <img :src="msg.content" alt="图片" style="max-width: 100%; height: auto;">
-            </template>
-            <template v-else-if="msg.type === 'voice'">
-              <audio controls :src="msg.content"></audio>
-            </template>
-            <template v-else>
-              {{ msg.content }}
-            </template>
+      <!-- 添加好友弹窗 -->
+      <div v-if="showAddFriendModal" class="modal-mask">
+      <div class="modal">
+          <input 
+          v-model="newFriendName" 
+          placeholder="  输入用户名"
+          class="modal-input"
+          >
+          <div class="modal-actions">
+          <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
+          <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
           </div>
-        </div>
       </div>
+      </div>
+
+    <!-- 聊天区域 -->
+    // 修改消息显示区域
+<div class="chat-area" ref="chatArea">
+  <div 
+    v-for="msg in store.messages"
+    :key="msg._id || msg.timestamp"
+    :class="['message-container', { 'own-message': msg.from === userId }]"
+  >
+    <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+    
+    <!-- 文本消息 -->
+    <div v-if="msg.type === 'text'" class="message-bubble">
+      <div class="message-content">{{ msg.content }}</div>
     </div>
-    <!-- 底栏 -->
-    <div class="footer">
-      <input
-        v-model="newMessage"
-        @keyup.enter="sendMessage"
-        :placeholder="currentPlaceholder"
+    
+    <!-- 图片消息 -->
+    <div v-else-if="msg.type === 'image'" class="message-image">
+      <img 
+        :src="msg.fileUrl" 
+        alt="图片消息"
+        @click="openLightbox(msg.fileUrl)"
       >
-      <button @click="sendMessage">发送</button>
-      <!-- 新增上传按钮 -->
-      <input
-        type="file"
-        id="fileInput"
-        @change="handleFileUpload"
-        accept="image/*, audio/*"
+      <div v-if="msg.content" class="image-caption">{{ msg.content }}</div>
+    </div>
+    
+    <!-- 语音消息 -->
+    <div v-else-if="msg.type === 'audio'" class="message-audio">
+      <audio controls :src="msg.fileUrl"></audio>
+      <div class="audio-transcript" v-if="msg.content">
+        {{ msg.content }}
+      </div>
+      <div class="audio-duration">{{ msg.duration.toFixed(1) }}秒</div>
+    </div>
+  </div>
+</div>
+
+    <!-- 底栏 -->
+   <!-- 修改底栏区域 -->
+  <div class="footer">
+    <!-- 图片上传按钮 -->
+    <label for="image-upload" class="footer-icon">
+      📷
+      <input 
+        id="image-upload" 
+        type="file" 
+        accept="image/*" 
+        @change="handleImageUpload"
         style="display: none;"
       >
-      <button @click="openFileInput">上传文件</button>
-      <!-- 新增语音录制按钮 -->
-      <button v-if="!isRecording" @click="startRecording">录制语音</button>
-      <button v-else @click="stopRecording">停止录制</button>
-    </div>
+    </label>
+    
+    <!-- 语音录制按钮 -->
+    <button 
+      class="footer-icon"
+      @mousedown="startRecording"
+      @mouseup="stopRecording"
+      @touchstart="startRecording"
+      @touchend="stopRecording"
+      :class="{ recording: isRecording }"
+    >
+      🎤
+    </button>
+    
+    <!-- 消息输入框 -->
+    <input
+      v-model="newMessage"
+      @keyup.enter="sendTextMessage"
+      :placeholder="currentPlaceholder"
+    >
+    
+    <!-- 发送按钮 -->
+    <button @click="sendTextMessage">发送</button>
+    
+    <!-- 音频播放器（临时显示） -->
+    <audio 
+      v-if="audioPreviewUrl" 
+      :src="audioPreviewUrl" 
+      controls
+      class="audio-preview"
+    ></audio>
+  </div>
+  
+  <!-- 录音指示器 -->
+  <div v-if="isRecording" class="recording-indicator">
+    <div class="pulse"></div>
+    <div>正在录音... {{ recordingDuration }}秒</div>
+  </div>
   </div>
 </template>
 
@@ -93,6 +136,16 @@ import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
+// 添加新的导入
+import { ref, onMounted, onUnmounted } from 'vue';
+
+// 添加新变量
+const isRecording = ref(false);
+const mediaRecorder = ref(null);
+const audioChunks = ref([]);
+const audioPreviewUrl = ref('');
+const recordingDuration = ref(0);
+let recordingTimer = null;
 
 const router = useRouter()
 const store = useChatStore()
@@ -101,71 +154,7 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
-const fileInput = ref(null);
-const isRecording = ref(false);
-const mediaRecorder = ref(null);
-const audioChunks = ref([]);
 
-const openFileInput = () => {
-  fileInput.value.click();
-};
-
-const handleFileUpload = async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const response = await axios.post(`${getBaseURL()}/api/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
-
-    if (response.data.url) {
-      const message = {
-        type: file.type.startsWith('image') ? 'image' : 'voice',
-        from: userId,
-        to: store.currentChat,
-        content: response.data.url,
-        timestamp: new Date().toISOString()
-      };
-      store.ws.send(JSON.stringify(message));
-      fileInput.value.value = '';
-    }
-  } catch (error) {
-    console.error('文件上传失败:', error);
-    alert('文件上传失败，请重试');
-  }
-};
-
-// 语音录制功能
-const startRecording = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder.value = new MediaRecorder(stream);
-    isRecording.value = true;
-    audioChunks.value = [];
-
-    mediaRecorder.value.ondataavailable = (event) => {
-      audioChunks.value.push(event.data);
-    };
-
-    mediaRecorder.value.start();
-  } catch (error) {
-    console.error('语音录制失败:', error);
-    alert('语音录制失败，请检查权限');
-  }
-};
-
-const stopRecording = () => {
-  if (mediaRecorder.value) {
-    mediaRecorder.value.stop();
-    isRecording.value = false;
-  }
-};
 // WebSocket 连接管理
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
@@ -266,6 +255,123 @@ const logout = () => {
   router.push('/login')
 }
 
+// 添加方法
+const sendTextMessage = () => {
+  if (newMessage.value.trim()) {
+    store.sendMessage(newMessage.value.trim());
+    newMessage.value = '';
+  }
+};
+
+const handleImageUpload = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  try {
+    // 显示加载状态
+    const originalButtonText = '发送';
+    sendButton.value = '上传中...';
+    
+    const uploadResult = await store.uploadFile(file);
+    store.sendMessage('图片消息', 'image', uploadResult);
+    
+    // 重置输入
+    e.target.value = '';
+  } catch (error) {
+    alert('图片上传失败: ' + error.message);
+  } finally {
+    sendButton.value = originalButtonText;
+  }
+};
+
+const startRecording = async () => {
+  if (isRecording.value) return;
+  
+  try {
+    audioChunks.value = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder.value = new MediaRecorder(stream);
+    
+    mediaRecorder.value.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        audioChunks.value.push(e.data);
+      }
+    };
+    
+    mediaRecorder.value.onstop = async () => {
+      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' });
+      
+      // 创建预览URL
+      audioPreviewUrl.value = URL.createObjectURL(audioBlob);
+      
+      // 计算时长
+      const duration = recordingDuration.value;
+      recordingDuration.value = 0;
+      
+      try {
+        // 创建文件对象
+        const audioFile = new File([audioBlob], 'recording.webm', {
+          type: 'audio/webm'
+        });
+        
+        // 上传文件
+        const uploadResult = await store.uploadFile(audioFile, duration);
+        
+        // 发送语音消息
+        store.sendMessage(uploadResult.transcript, 'audio', {
+          ...uploadResult,
+          duration
+        });
+        
+        // 5秒后清除预览
+        setTimeout(() => {
+          audioPreviewUrl.value = '';
+          URL.revokeObjectURL(audioPreviewUrl.value);
+        }, 5000);
+      } catch (error) {
+        alert('语音消息发送失败: ' + error.message);
+      }
+      
+      // 关闭媒体流
+      stream.getTracks().forEach(track => track.stop());
+    };
+    
+    mediaRecorder.value.start();
+    isRecording.value = true;
+    
+    // 开始计时
+    recordingDuration.value = 0;
+    recordingTimer = setInterval(() => {
+      recordingDuration.value = parseFloat((recordingDuration.value + 0.1).toFixed(1));
+    }, 100);
+  } catch (error) {
+    console.error('录音启动失败:', error);
+    alert('无法访问麦克风，请检查权限设置');
+    isRecording.value = false;
+  }
+};
+
+const stopRecording = () => {
+  if (isRecording.value && mediaRecorder.value) {
+    mediaRecorder.value.stop();
+    isRecording.value = false;
+    clearInterval(recordingTimer);
+  }
+};
+
+// 添加图片预览方法
+const openLightbox = (imageUrl) => {
+  // 实现一个简单的lightbox功能
+  // 可以使用第三方库或自定义模态框
+};
+
+// 清理资源
+onUnmounted(() => {
+  stopRecording();
+  if (audioPreviewUrl.value) {
+    URL.revokeObjectURL(audioPreviewUrl.value);
+  }
+});
 // 添加好友功能
 const toggleAddFriend = () => {
   showAddFriendModal.value = !showAddFriendModal.value
@@ -382,10 +488,7 @@ watch(() => store.messages, async () => {
     chatArea.value.scrollTop = chatArea.value.scrollHeight
   }
 }, { deep: true })
-// 在onMounted中初始化fileInput
-onMounted(() => {
-  fileInput.value = document.getElementById('fileInput');
-});
+
 // 初始化加载
 onMounted(async () => {
   try {
@@ -687,6 +790,150 @@ margin-right: 4.5%;
 
 .footer button:hover {
 background: var(--primary-dark);
+}
+
+/* 添加新样式 */
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 64px;
+  background: gainsboro;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+}
+
+.footer-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.2s;
+}
+
+.footer-icon:hover {
+  background: #f0f0f0;
+  transform: scale(1.05);
+}
+
+.footer-icon.recording {
+  background: #ff4d4d;
+  color: white;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 77, 77, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
+}
+
+.recording-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 20px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1000;
+}
+
+.pulse {
+  width: 80px;
+  height: 80px;
+  background: #ff4d4d;
+  border-radius: 50%;
+  margin-bottom: 15px;
+  animation: pulse 2s infinite;
+}
+
+/* 消息样式 */
+.message-image img {
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: 15px;
+  cursor: zoom-in;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.message-image .image-caption {
+  margin-top: 5px;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.message-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.message-audio audio {
+  max-width: 250px;
+}
+
+.audio-transcript {
+  margin-top: 5px;
+  padding: 8px;
+  background: #f8f8f8;
+  border-radius: 8px;
+  font-size: 0.85em;
+  max-width: 300px;
+}
+
+.audio-duration {
+  font-size: 0.8em;
+  color: #777;
+  margin-top: 4px;
+}
+
+.own-message .message-audio {
+  align-items: flex-end;
+}
+
+.audio-preview {
+  position: absolute;
+  bottom: 70px;
+  width: 250px;
+  right: 10px;
+  background: white;
+  border-radius: 20px;
+  padding: 5px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .message-image img {
+    max-width: 200px;
+    max-height: 200px;
+  }
+  
+  .footer {
+    padding: 0 5px;
+    gap: 5px;
+  }
+  
+  .footer input {
+    margin-left: 0;
+  }
 }
 
 /* 头像基础样式 */
