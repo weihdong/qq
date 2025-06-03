@@ -170,6 +170,7 @@ const sendMessage = (content, type = 'text', fileData = null) => {
     currentFriend,
     connectWebSocket,
     sendMessage,
+    ws: socket,
     loadMessages,
     loadFriends,
     uploadFile
