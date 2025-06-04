@@ -18,7 +18,7 @@
       <button @click="login" class="login-btn">进入聊天</button>
       <h1 class="title">🍊OO</h1>
       <h1 class="title t1">永不膨胀的安全聊天</h1>
-      <h5>orange orange chat v1.01</h5>
+      <h5>orange orange chat v2.12</h5>
 
     </div>
   </template>
@@ -135,7 +135,7 @@
   }
   
   .login-btn {
-    width: 70%;
+    width: 80%;
     padding: 12px;
     background: #FF6B35;
     color: white;
