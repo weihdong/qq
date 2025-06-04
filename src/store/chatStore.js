@@ -63,33 +63,36 @@ export const useChatStore = defineStore('chat', () => {
     };
   }
 
-  const sendMessage = (content, type = 'text') => {
-    if (!content || !currentChat.value) return
+  const sendMessage = (content) => {
+    if (!content.trim() || !currentChat.value) return
     const msg = {
-      type, // 新增消息类型
       from: localStorage.getItem('userId'),
       to: currentChat.value,
-      content: content
+      content: content.trim()
     }
     socket.value.send(JSON.stringify(msg))
   }
 
-  const loadMessages = async () => {
-    try {
-      const res = await axios.get(`${getBaseURL()}/api/messages`, {
-        params: {
-          from: localStorage.getItem('userId'),
-          to: currentChat.value
-        }
-      })
-      messages.value = res.data.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp)
-      }))
-    } catch (error) {
-      console.error('加载消息失败:', error)
-    }
+// 修改加载消息方法
+const loadMessages = async () => {
+  try {
+    const res = await axios.get(`${getBaseURL()}/api/messages`, {
+      params: {
+        from: localStorage.getItem('userId'),
+        to: currentChat.value
+      }
+    })
+    
+    // 添加消息类型处理
+    messages.value = res.data.map(msg => ({
+      ...msg,
+      timestamp: new Date(msg.timestamp),
+      type: msg.type || 'text' // 默认文本类型
+    }))
+  } catch (error) {
+    console.error('加载消息失败:', error)
   }
+}
 
   const loadFriends = async () => {
     try {
