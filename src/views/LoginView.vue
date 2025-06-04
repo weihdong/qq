@@ -95,7 +95,7 @@
   
 <style scoped>
   .login-container {
-    max-width: 70%;
+    max-width: 80%;
     margin: 50px auto;
     padding: 0rem;
     background: #FFF5E6;
@@ -135,7 +135,7 @@
   }
   
   .login-btn {
-    width: 80%;
+    width: 60%;
     padding: 12px;
     background: #FF6B35;
     color: white;
