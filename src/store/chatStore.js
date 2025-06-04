@@ -83,15 +83,25 @@ const loadMessages = async () => {
       }
     })
     
-    // 添加消息类型处理
+    // 确保消息格式一致
     messages.value = res.data.map(msg => ({
       ...msg,
-      timestamp: new Date(msg.timestamp),
-      type: msg.type || 'text' // 默认文本类型
+      _id: msg._id,
+      from: msg.from,
+      to: msg.to,
+      content: msg.content,
+      type: msg.type || 'text',
+      fileUrl: msg.fileUrl,
+      timestamp: new Date(msg.timestamp)
     }))
   } catch (error) {
     console.error('加载消息失败:', error)
   }
+}
+
+// 添加清除消息方法
+const clearMessages = () => {
+  messages.value = []
 }
 
   const loadFriends = async () => {
@@ -119,6 +129,7 @@ const loadMessages = async () => {
     connectWebSocket,
     sendMessage,
     loadMessages,
-    loadFriends
+    loadFriends,
+    clearMessages 
   }
 })

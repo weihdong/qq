@@ -44,36 +44,35 @@
     <!-- 聊天区域 -->
   <!-- 聊天区域 -->
   <div class="chat-area" ref="chatArea">
-      <div 
-        v-for="msg in store.messages"
-        :key="msg._id"
-        :class="['message-container', { 'own-message': msg.from === userId }]"
-      >
-        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-        
-        <!-- 文本消息 -->
-        <div v-if="msg.type === 'text'" class="message-bubble">
-          <div class="message-content">{{ msg.content }}</div>
-        </div>
-        
-        <!-- 表情消息 -->
-        <div v-if="msg.type === 'emoji'" class="emoji-message">
-          <img :src="msg.content" class="emoji-img" alt="表情">
-        </div>
-        
-        <!-- 图片消息 -->
-        <div v-if="msg.type === 'image'" class="image-message">
-          <img :src="msg.fileUrl" class="image-preview" @click="openImage(msg.fileUrl)">
-        </div>
-        
-        <!-- 语音消息 -->
-        <div v-if="msg.type === 'audio'" class="audio-message">
-          <audio controls :src="msg.fileUrl" class="audio-player"></audio>
-          <div class="audio-duration">{{ formatDuration(msg.content) }}</div>
-        </div>
+    <div 
+      v-for="msg in store.messages"
+      :key="msg._id"
+      :class="['message-container', { 'own-message': msg.from === userId }]"
+    >
+      <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+      
+      <!-- 文本消息 -->
+      <div v-if="msg.type === 'text'" class="message-bubble">
+        <div class="message-content">{{ msg.content }}</div>
+      </div>
+      
+      <!-- 表情消息 -->
+      <div v-if="msg.type === 'emoji'" class="emoji-message">
+        <img :src="msg.content" class="emoji-img" alt="表情">
+      </div>
+      
+      <!-- 图片消息 -->
+      <div v-if="msg.type === 'image'" class="image-message">
+        <img :src="msg.fileUrl" class="image-preview" @click="openImage(msg.fileUrl)">
+      </div>
+      
+      <!-- 语音消息 -->
+      <div v-if="msg.type === 'audio'" class="audio-message">
+        <audio controls :src="msg.fileUrl" class="audio-player"></audio>
+        <div class="audio-duration">{{ formatDuration(msg.content) }}</div>
       </div>
     </div>
-
+  </div>
     <!-- 底栏修改 -->
     <div class="footer">
       <!-- 表情按钮 -->
@@ -154,23 +153,13 @@ const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
 // 新增表情包 - QQ表情
-const EMOJI_BASE_URL = 'https://unpkg.com/@waline/emojis@1.2.0/qq'
+const EMOJI_BASE_URL = 'https://unpkg.com/@waline/emojis@1.2.0/tieba'
 const emojis = ref([
-  { name: '微笑', url: `${EMOJI_BASE_URL}/weixiao.gif` },
-  { name: '憨笑', url: `${EMOJI_BASE_URL}/hanxiao.gif` },
-  { name: '色', url: `${EMOJI_BASE_URL}/se.gif` },
-  { name: '发呆', url: `${EMOJI_BASE_URL}/fadai.gif` },
-  { name: '得意', url: `${EMOJI_BASE_URL}/deyi.gif` },
-  { name: '流泪', url: `${EMOJI_BASE_URL}/liulei.gif` },
-  { name: '害羞', url: `${EMOJI_BASE_URL}/haixiu.gif` },
-  { name: '闭嘴', url: `${EMOJI_BASE_URL}/bizui.gif` },
-  { name: '睡', url: `${EMOJI_BASE_URL}/shui.gif` },
-  { name: '大哭', url: `${EMOJI_BASE_URL}/daku.gif` },
-  { name: '尴尬', url: `${EMOJI_BASE_URL}/ganga.gif` },
-  { name: '发怒', url: `${EMOJI_BASE_URL}/fanu.gif` },
-  { name: '调皮', url: `${EMOJI_BASE_URL}/tiaopi.gif` },
-  { name: '呲牙', url: `${EMOJI_BASE_URL}/ciya.gif` },
-  { name: '惊讶', url: `${EMOJI_BASE_URL}/jingya.gif` }
+  { name: '微笑', url: `${EMOJI_BASE_URL}/tieba_agree.png` },
+  { name: '憨笑', url: `${EMOJI_BASE_URL}/tieba_look_down.png` },
+  { name: '色', url: `${EMOJI_BASE_URL}/tieba_sunglasses.png` },
+  { name: '发呆', url: `${EMOJI_BASE_URL}/tieba_awkward.png` },
+  { name: '得意', url: `${EMOJI_BASE_URL}/tieba_sleep.png` }
 ])
 
 // 新增状态变量
@@ -338,48 +327,65 @@ const getWsURL = () => {
 
 // WebSocket 连接管理（优化重连逻辑）
 const connectWebSocket = () => {
-const ws = new WebSocket(getWsURL())
-let heartbeatInterval
+  const ws = new WebSocket(getWsURL())
+  let heartbeatInterval
 
-const sendConnect = () => {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'connect',
-      userId: localStorage.getItem('userId')
-    }))
-  }
-}
-
-ws.onopen = () => {
-  console.log('WebSocket连接成功')
-  reconnectAttempts = 0
-  sendConnect()
-  
-  // 心跳机制（每25秒发送一次）
-  heartbeatInterval = setInterval(() => {
+  const sendConnect = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'ping' }))
+      ws.send(JSON.stringify({
+        type: 'connect',
+        userId: localStorage.getItem('userId')
+      }))
     }
-  }, 25000)
-}
+  }
 
+  ws.onopen = () => {
+    console.log('WebSocket连接成功')
+    reconnectAttempts = 0
+    sendConnect()
+    
+    // 心跳机制（每25秒发送一次）
+    heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }))
+      }
+    }, 25000)
+  }
+
+  // 修改消息处理逻辑
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data)
-      switch (message.type) {
-        case 'message':
-          store.messages.push(message)
-          break
-        case 'status':
-          const friend = store.friends.find(f => f._id === message.userId)
-          if (friend) friend.isOnline = message.online
-          break
-        case 'system':
-          console.log('系统消息:', message.message)
-          break
+      
+      // 统一处理所有消息
+      if (message.type === 'message') {
+        // 确保消息格式正确
+        const newMessage = {
+          ...message.data,
+          _id: message.data._id,
+          from: message.data.from,
+          to: message.data.to,
+          content: message.data.content,
+          type: message.data.type,
+          fileUrl: message.data.fileUrl,
+          timestamp: new Date(message.data.timestamp)
+        }
+        
+        // 添加到消息列表
+        store.messages.push(newMessage)
+        
+        // 更新好友状态
+        if (newMessage.type === 'status') {
+          const friend = store.friends.find(f => f._id === newMessage.userId)
+          if (friend) friend.isOnline = newMessage.online
+        }
+      }
+      // 系统消息
+      else if (message.type === 'system') {
+        console.log('系统消息:', message.message)
       }
     } catch (error) {
-      console.error('消息解析错误:', error)
+      console.error('消息处理错误:', error)
     }
   }
 
@@ -483,10 +489,15 @@ try {
 }
 }
 
-// 选择好友
 const selectFriend = async (friendId) => {
-  store.currentChat = friendId
-  await store.loadMessages()
+  // 清除当前消息
+  store.clearMessages();
+  
+  // 设置当前聊天
+  store.currentChat = friendId;
+  
+  // 加载新消息
+  await store.loadMessages();
 }
 
 // 发送消息（增强版）
