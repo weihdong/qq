@@ -31,7 +31,7 @@
       <div class="modal">
           <input 
           v-model="newFriendName" 
-          placeholder="  输入用户名"
+          placeholder="输入用户名"
           class="modal-input"
           >
           <div class="modal-actions">
@@ -73,10 +73,11 @@
       </div>
     </div>
   </div>
+
+
     <!-- 底栏修改 -->
     <div class="footer">
-      <!-- 表情按钮 -->
-      <div class="emoji-btn" @click="toggleEmojiPicker">😊</div>
+
       
       <!-- 消息输入框 -->
       <input
@@ -85,9 +86,12 @@
         :placeholder="currentPlaceholder"
         ref="messageInput"
       >
-      
+
+      <!-- 表情按钮 -->
+      <button class="emoji-btn" @click="toggleEmojiPicker">😃</button>
+
       <!-- 图片上传按钮 -->
-      <div class="file-btn" @click="triggerFileUpload">
+      <button class="file-btn" @click="triggerFileUpload">
         <input 
           type="file" 
           ref="fileInput" 
@@ -95,8 +99,8 @@
           @change="handleImageUpload"
           style="display: none"
         >
-        📷
-      </div>
+        🌁
+      </button>
       
       <!-- 语音录制按钮 -->
       <button 
@@ -106,11 +110,11 @@
         @touchstart="startRecording"
         @touchend="stopRecording"
       >
-        🎤
+        🎙️
       </button>
       
       <!-- 发送按钮 -->
-      <button @click="sendTextMessage">发送</button>
+      <button class="fs" @click="sendTextMessage">发送</button>
     </div>
     
     <!-- 表情选择器 -->
@@ -437,7 +441,7 @@ const currentFriend = computed(() => {
 })
 
 const currentPlaceholder = computed(() => {
-  if (!store.currentChat) return '点击顶栏头像进行聊天吧！'
+  if (!store.currentChat) return '点击头像开始聊天'
   return currentFriend.value
     ? `给 ${currentFriend.value.username} 发送消息`
     : '正在加载用户信息...'
@@ -634,9 +638,9 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
 
 .modal {
   background: #fff;
-  border-radius: 30px;
+  border-radius: 48px;
   padding: 28px;
-  width: 78%;
+  width: 68%;
   max-width: 320px;
   box-shadow: 0 10px 40px rgba(0,0,0,0.12);
 }
@@ -646,7 +650,7 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
   height: 52px;
   padding: 0 0px;
   border: 2px solid #f0f0f0;
-  border-radius: 30px;
+  border-radius: 40px;
   font-size: 16px;
   margin-bottom: 24px;
   background: #fff;
@@ -668,7 +672,7 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
   flex: 1;
   height: 52px;
   border: none;
-  border-radius: 30px;
+  border-radius: 40px;
   font-size: 17px;
   font-weight: 500;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -677,11 +681,11 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
 .confirm-btn {
   background: orange;
   color: white;
-  margin-left: -6px; /* 视觉对齐补偿 */
+  margin-left: -4px; /* 视觉对齐补偿 */
 }
 
 .confirm-btn:active {
-  background: #0062cc;
+  background: rgb(168, 109, 0);
   transform: scale(0.96);
 }
 
@@ -689,7 +693,7 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
   background: transparent;
   color: #666;
   border: 2px solid #e3e3e3;
-  margin-right: -6px; /* 视觉对齐补偿 */
+  margin-right: -4px; /* 视觉对齐补偿 */
 }
 
 .cancel-btn:active {
@@ -701,6 +705,7 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
 .modal-input::placeholder {
   color: #999;
   font-weight: 300;
+  padding: 15px;
 }
 
 /* 全局样式重置 */
@@ -823,7 +828,7 @@ width: 100%;
 height: 64px;
 background: gainsboro;
 display: flex;
-gap: 18px;
+gap: 4%;
 align-items: center;
 padding: 0 0;
 border-top: 1px solid var(--border);
@@ -831,7 +836,7 @@ border-top: 1px solid var(--border);
 
 /* 输入框 */
 .footer input {
-flex: 1;
+width: 40%;
 height: 48px;
 border: 2px solid var(--border);
 border-radius: 28px;
@@ -843,28 +848,25 @@ margin-left: 4.5%;
 }
 
 .footer input:focus {
-border-color: var(--primary);
-box-shadow: 0 0 0 3px rgba(255,107,53,0.1);
+border-color: orange;
+box-shadow: 0 0 0 2px orange;
 outline: none;
 }
 
 /* 发送按钮 */
 .footer button {
-width: 96px;
+width: 42px;
 height: 48px;
-background: orange;
-color: black;
+background: gainsboro;
+color: rgb(0, 0, 0);
 border: none;
-border-radius: 26px;
+border-radius: 0px;
 font-weight: 600;
 cursor: pointer;
 transition: all 0.2s;
-margin-right: 4.5%;
+margin-right: -0.6%;
 }
 
-.footer button:hover {
-background: var(--primary-dark);
-}
 
 /* 头像基础样式 */
 .avatar-circle {
@@ -924,19 +926,31 @@ z-index: -1;
 
 /* 新增样式 */
 .emoji-btn, .file-btn, .voice-btn {
-  width: 40px;
+  width: 2%;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 260%;
   cursor: pointer;
   background: white;
   border-radius: 50%;
-  margin: 0 5px;
+  margin: 0 -11px;
   user-select: none;
 }
-
+.fs {
+  width: 2%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 100%;
+  cursor: pointer;
+  background: #4CAF50;
+  border-radius: 50%;
+  margin: 0 -11px;
+  user-select: none;
+}
 .emoji-btn:hover, .file-btn:hover, .voice-btn:hover {
   background: #f0f0f0;
 }
@@ -1048,11 +1062,6 @@ z-index: -1;
   animation: pulse 1.5s infinite;
 }
 
-@keyframes pulse {
-  0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(255, 77, 77, 0); }
-  100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
-}
 
 .cancel-btn {
   margin-top: 20px;
