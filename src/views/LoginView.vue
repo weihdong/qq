@@ -1,5 +1,6 @@
 <template>
     <div class="login-container">
+      <br>
       <div class="input-group">
         <input
           v-model="username"
@@ -18,7 +19,9 @@
       <button @click="login" class="login-btn">进入聊天</button>
       <h1 class="title">🍊OO</h1>
       <h1 class="title t1">永不膨胀的安全聊天</h1>
-      <h5>orange orange chat v2.12</h5>
+      <br>
+      <br>
+      <h5>orange orange chat v3.0.1</h5>
 
     </div>
   </template>
@@ -95,7 +98,7 @@
   
 <style scoped>
   .login-container {
-    max-width: 80%;
+    max-width: 84%;
     margin: 50px auto;
     padding: 0rem;
     background: #FFF5E6;
