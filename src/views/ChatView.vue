@@ -3,8 +3,8 @@
     <!-- 顶栏 -->
     <div class="header">
       <div class="header-scroll-container"></div>
-      <div class="avatar-circle exit-btn" @click="logout">⎋</div>
-      <div class="avatar-circle add-btn" @click="toggleAddFriend">＋</div>
+      <div class="avatar-circle exit-btn" @click="logout"><img src="./png/out1.png" alt="退出"></div>
+      <div class="avatar-circle add-btn" @click="toggleAddFriend"><img src="./png/add.png" alt="添加"></div>
       
       <!-- 好友列表 -->
       <!-- 修改头像模板 -->
@@ -88,7 +88,7 @@
       >
 
       <!-- 表情按钮 -->
-      <button class="emoji-btn" @click="toggleEmojiPicker">😃</button>
+      <button class="emoji-btn" @click="toggleEmojiPicker"><img src="./png/emoji.png" alt="表情"></button>
 
       <!-- 图片上传按钮 -->
       <button class="file-btn" @click="triggerFileUpload">
@@ -99,7 +99,7 @@
           @change="handleImageUpload"
           style="display: none"
         >
-        🌁
+        <img src="./png/image.png" alt="图片">
       </button>
       
       <!-- 语音录制按钮 -->
@@ -110,11 +110,11 @@
         @touchstart="startRecording"
         @touchend="stopRecording"
       >
-        🎙️
+      <img src="./png/mic.png" alt="语音">
       </button>
       
       <!-- 发送按钮 -->
-      <button class="fs" @click="sendTextMessage">发送</button>
+      <button class="fs" @click="sendTextMessage"><img src="./png/send.png" alt="发送"></button>
     </div>
     
     <!-- 表情选择器 -->
@@ -138,7 +138,7 @@
       <div class="recording-indicator">
         <div class="pulse"></div>
         <div class="text">录制中... {{ recordingDuration }}秒</div>
-        <button class="cancel-btn" @click="cancelRecording">取消</button>
+        <button class="cancel-btn" @click="cancelRecording">完成</button>
       </div>
     </div>
   </div>
@@ -356,14 +356,13 @@ const connectWebSocket = () => {
     }, 25000)
   }
 
-  // 修改消息处理逻辑
+  // 修改后的消息处理逻辑
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data)
       
       // 统一处理所有消息
       if (message.type === 'message') {
-        // 确保消息格式正确
         const newMessage = {
           ...message.data,
           _id: message.data._id,
@@ -375,13 +374,14 @@ const connectWebSocket = () => {
           timestamp: new Date(message.data.timestamp)
         }
         
-        // 添加到消息列表
         store.messages.push(newMessage)
-        
-        // 更新好友状态
-        if (newMessage.type === 'status') {
-          const friend = store.friends.find(f => f._id === newMessage.userId)
-          if (friend) friend.isOnline = newMessage.online
+      }
+      // 状态更新消息 (新增处理)
+      else if (message.type === 'status') {
+        // 找到对应的好友并更新状态
+        const friendIndex = store.friends.findIndex(f => f._id === message.userId)
+        if (friendIndex !== -1) {
+          store.friends[friendIndex].isOnline = message.online
         }
       }
       // 系统消息
@@ -393,10 +393,9 @@ const connectWebSocket = () => {
     }
   }
 
-// 新增：在收到关闭事件时尝试立即重连
-ws.onclose = (event) => {
-  console.log('连接关闭，代码:', event.code, '原因:', event.reason)
-  clearInterval(heartbeatInterval)
+  ws.onclose = (event) => {
+    console.log('连接关闭，代码:', event.code, '原因:', event.reason)
+    clearInterval(heartbeatInterval)
   
   // 立即尝试重连（指数退避）
   const reconnect = () => {
@@ -761,7 +760,7 @@ box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 /* 聊天区域 */
 .chat-area {
 flex: 1;
-background-color: rgb(255, 246, 234);
+background-color: white;
 overflow-y: auto;
 padding: 80px 16px 100px;
 display: flex;
@@ -855,7 +854,7 @@ outline: none;
 
 /* 发送按钮 */
 .footer button {
-width: 42px;
+width: 10%;
 height: 48px;
 background: gainsboro;
 color: rgb(0, 0, 0);
@@ -866,7 +865,9 @@ cursor: pointer;
 transition: all 0.2s;
 margin-right: -0.6%;
 }
-
+.footer button:hover {
+  background: var(--primary-dark);
+}
 
 /* 头像基础样式 */
 .avatar-circle {
@@ -944,7 +945,7 @@ z-index: -1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 100%;
+  font-size: 260%;
   cursor: pointer;
   background: #4CAF50;
   border-radius: 50%;
