@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
   endVideoCall()
 })
 
-// 新增视频通话方法
+// 修改 startVideoCall 方法（简化媒体约束）
 const startVideoCall = async () => {
   if (!store.currentChat) {
     alert('请先选择好友')
@@ -216,23 +216,19 @@ const startVideoCall = async () => {
   }
   
   try {
-    // 提前打开模态框
     videoCallModal.value = true
-    await nextTick() // 确保DOM更新完成
+    await nextTick()
     
-    // 获取媒体流
-    const constraints = { 
-      video: { width: 1280, height: 720 },
+    // 简化媒体约束，避免 OverconstrainedError
+    localStream.value = await navigator.mediaDevices.getUserMedia({ 
+      video: true, 
       audio: true 
-    }
+    }).catch(error => {
+      console.warn('获取媒体流失败:', error)
+      // 尝试更宽松的约束
+      return navigator.mediaDevices.getUserMedia({ video: true })
+    })
     
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-      .catch(async error => {
-        console.warn('高清视频失败，尝试基础视频:', error)
-        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      })
-    
-    // 创建RTCPeerConnection
     createPeerConnection()
     
     // 添加本地流
@@ -243,9 +239,7 @@ const startVideoCall = async () => {
     // 显示本地视频
     if (localVideo.value) {
       localVideo.value.srcObject = localStream.value
-      localVideo.value.onloadedmetadata = () => {
-        localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
-      }
+      localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
     }
     
     // 创建offer
@@ -256,14 +250,12 @@ const startVideoCall = async () => {
     
     await peerConnection.value.setLocalDescription(offer)
     
-    // 发送offer给好友
+    // 发送offer给好友（添加明确的信号类型）
     sendVideoSignal({
-      type: 'offer',
+      signalType: 'offer', // 统一使用 signalType 字段
       sdp: offer.sdp,
       to: store.currentChat
     })
-    
-    console.log('视频通话已启动，已发送offer')
   } catch (error) {
     console.error('启动视频通话失败:', error)
     alert(`视频通话错误: ${error.message}`)
@@ -380,12 +372,9 @@ const createPeerConnection = () => {
 
 }
 
-// 发送视频信号
+// 修改 sendVideoSignal 方法（统一信号格式）
 const sendVideoSignal = (data) => {
-  if (!store.ws || store.ws.readyState !== WebSocket.OPEN) {
-    console.error('WebSocket连接未就绪')
-    return
-  }
+  if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return
   
   const signal = {
     type: 'video-signal',
@@ -411,7 +400,7 @@ const handleVideoError = (type) => {
 }
 
 // 处理收到的视频信号
-// 修改 handleVideoSignal 方法
+// 修改 handleVideoSignal 方法（修复信号处理）
 const handleVideoSignal = async (signal) => {
   console.log('收到视频信号:', signal)
   
@@ -423,37 +412,29 @@ const handleVideoSignal = async (signal) => {
   }
   
   // 处理通话请求（offer）
-  if (signal.type === 'offer') {
+  if (signal.signalType === 'offer') {
     try {
-      console.log('收到offer，创建连接')
-      
-      // 确保模态框已打开
       videoCallModal.value = true
       await nextTick()
       
       createPeerConnection()
       
-      // 获取本地媒体流
+      // 获取本地媒体流（简化约束）
       localStream.value = await navigator.mediaDevices.getUserMedia({ 
         video: true, 
         audio: true 
-      }).catch(async error => {
-        console.warn('高清视频失败，尝试基础视频:', error)
-        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }))
+      
+      // 添加本地流
+      localStream.value.getTracks().forEach(track => {
+        peerConnection.value.addTrack(track, localStream.value)
       })
       
       // 显示本地视频
       if (localVideo.value) {
         localVideo.value.srcObject = localStream.value
-        localVideo.value.onloadedmetadata = () => {
-          localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
-        }
+        localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
       }
-      
-      // 添加本地流到连接
-      localStream.value.getTracks().forEach(track => {
-        peerConnection.value.addTrack(track, localStream.value)
-      })
       
       // 处理offer
       await peerConnection.value.setRemoteDescription(
@@ -464,39 +445,31 @@ const handleVideoSignal = async (signal) => {
       const answer = await peerConnection.value.createAnswer()
       await peerConnection.value.setLocalDescription(answer)
       
-      // 发送answer
+      // 发送answer（统一 signalType 字段）
       sendVideoSignal({
-        type: 'answer',
+        signalType: 'answer',
         sdp: answer.sdp,
         to: signal.from
       })
-      
-      console.log('已发送answer')
     } catch (error) {
       console.error('接受视频通话失败:', error)
-      alert('接受视频通话失败: ' + error.message)
       endVideoCall()
     }
     return
   }
   
-  // 其他信号处理（保持原有逻辑）
-  if (!peerConnection.value) {
-    console.warn('收到非offer信号但无连接')
-    return
-  }
+  // 其他信号处理
+  if (!peerConnection.value) return
   
   try {
-    switch (signal.type) {
+    switch (signal.signalType) {
       case 'answer':
-        console.log('收到answer')
         await peerConnection.value.setRemoteDescription(
           new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
         )
         break
         
       case 'candidate':
-        console.log('收到ICE候选')
         if (signal.candidate) {
           await peerConnection.value.addIceCandidate(
             new RTCIceCandidate(signal.candidate)
@@ -507,14 +480,11 @@ const handleVideoSignal = async (signal) => {
   } catch (error) {
     console.error('处理视频信号错误:', error)
   }
-
 }
-
-// 结束通话时添加资源清理
+// 修改 endVideoCall 方法（添加资源清理）
 const endVideoCall = () => {
   console.log('结束视频通话');
   
-  // 发送结束信号（确保服务端能处理）
   if (store.currentChat && store.ws?.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify({
       type: 'video-signal',
@@ -523,33 +493,22 @@ const endVideoCall = () => {
     }));
   }
 
-  // 增强资源清理
+  // 清理资源
   if (peerConnection.value) {
-    peerConnection.value.onicecandidate = null;
-    peerConnection.value.ontrack = null;
     peerConnection.value.close();
     peerConnection.value = null;
   }
   
   if (localStream.value) {
-    localStream.value.getTracks().forEach(track => {
-      track.stop(); // 确保轨道停止
-      localStream.value.removeTrack(track); // 从流中移除
-    });
+    localStream.value.getTracks().forEach(track => track.stop());
     localStream.value = null;
   }
   
-  // 清除视频元素引用
-  if (localVideo.value) {
-    localVideo.value.srcObject = null;
-  }
-  
-  if (remoteVideo.value) {
-    remoteVideo.value.srcObject = null;
-  }
+  if (localVideo.value) localVideo.value.srcObject = null;
+  if (remoteVideo.value) remoteVideo.value.srcObject = null;
   
   videoCallModal.value = false;
-}
+};
 
 // 切换摄像头
 const toggleCamera = () => {
