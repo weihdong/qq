@@ -116,7 +116,7 @@
 
       <!-- 新增视频通话按钮 -->
       <button 
-        class="video-btn"
+        class="videobtn"
         @click="startVideoCall"
       >
         <img src="./png/video.png" alt="视频通话">
@@ -1357,7 +1357,7 @@ z-index: -1;
 .avatar-circle:nth-child(7n+7) { background-color: #e0f4f3; } /* 新增浅青绿 */
 
 /* 新增样式 */
-.emoji-btn, .file-btn, .voice-btn, .video-btn {
+.emoji-btn, .file-btn, .voice-btn, .videobtn {
   width: 2%;
   height: 40px;
   display: flex;
@@ -1594,7 +1594,7 @@ z-index: -1;
 .footer .video-btn {
   width: 40px;
   height: 40px;
-  background: gainsboro;
+  background: white;
   border-radius: 50%;
   margin: 0 -11px;
 }
