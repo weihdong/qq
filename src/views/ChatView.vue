@@ -113,6 +113,15 @@
       <img src="./png/mic.png" alt="语音">
       </button>
       
+
+      <!-- 新增视频通话按钮 -->
+      <button 
+        class="video-btn"
+        @click="startVideoCall"
+      >
+        <img src="./png/video.png" alt="视频通话">
+      </button>
+
       <!-- 发送按钮 -->
       <button class="fs" @click="sendTextMessage"><img src="./png/send.png" alt="发送"></button>
     </div>
@@ -127,7 +136,29 @@
         <img :src="emoji.url" class="emoji-option">
       </div>
     </div>
-    
+        <!-- 新增视频通话模态框 -->
+    <div v-if="videoCallModal" class="video-modal">
+      <div class="video-container">
+        <!-- 本地视频流 -->
+        <video ref="localVideo" autoplay muted playsinline></video>
+        
+        <!-- 远程视频流 -->
+        <video ref="remoteVideo" autoplay playsinline></video>
+        
+        <!-- 控制按钮 -->
+        <div class="video-controls">
+          <button class="video-btn end-call" @click="endVideoCall">
+            <img src="./png/end-call.png" alt="结束通话">
+          </button>
+          <button class="video-btn toggle-camera" @click="toggleCamera">
+            <img :src="cameraEnabled ? './png/camera-on.png' : './png/camera-off.png'" alt="切换摄像头">
+          </button>
+          <button class="video-btn toggle-mic" @click="toggleMicrophone">
+            <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- 图片预览模态框 -->
     <div v-if="previewImage" class="image-preview-modal" @click="previewImage = null">
       <img :src="previewImage" class="full-image">
@@ -148,6 +179,7 @@ import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
+import { RTCPeerConnection, RTCSessionDescription } from 'webrtc-adapter'
 
 const router = useRouter()
 const store = useChatStore()
@@ -156,6 +188,227 @@ const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
 const showAddFriendModal = ref(false)
 const newFriendName = ref('')
+// 新增视频通话相关变量
+const videoCallModal = ref(false)
+const localVideo = ref(null)
+const remoteVideo = ref(null)
+const localStream = ref(null)
+const peerConnection = ref(null)
+const cameraEnabled = ref(true)
+const micEnabled = ref(true)
+
+// 新增视频通话方法
+const startVideoCall = async () => {
+  if (!store.currentChat) {
+    alert('请先选择好友')
+    return
+  }
+  
+  try {
+    // 获取本地媒体流
+    localStream.value = await navigator.mediaDevices.getUserMedia({ 
+      video: true, 
+      audio: true 
+    })
+    
+    // 创建RTCPeerConnection
+    createPeerConnection()
+    
+    // 添加本地流到连接
+    localStream.value.getTracks().forEach(track => {
+      peerConnection.value.addTrack(track, localStream.value)
+    })
+    
+    // 显示本地视频
+    if (localVideo.value) {
+      localVideo.value.srcObject = localStream.value
+    }
+    
+    // 创建offer
+    const offer = await peerConnection.value.createOffer()
+    await peerConnection.value.setLocalDescription(offer)
+    
+    // 发送offer给好友
+    sendVideoSignal({
+      type: 'offer',
+      sdp: offer.sdp,
+      to: store.currentChat
+    })
+    
+    // 打开视频模态框
+    videoCallModal.value = true
+  } catch (error) {
+    console.error('启动视频通话失败:', error)
+    alert('无法访问摄像头/麦克风，请检查权限设置')
+  }
+}
+
+// 创建RTCPeerConnection
+const createPeerConnection = () => {
+  const configuration = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  }
+  
+  peerConnection.value = new RTCPeerConnection(configuration)
+  
+  // ICE候选处理
+  peerConnection.value.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendVideoSignal({
+        type: 'candidate',
+        candidate: event.candidate,
+        to: store.currentChat
+      })
+    }
+  }
+  
+  // 远程流处理
+  peerConnection.value.ontrack = (event) => {
+    if (event.streams && event.streams[0]) {
+      if (remoteVideo.value) {
+        remoteVideo.value.srcObject = event.streams[0]
+      }
+    }
+  }
+  
+  // 连接状态变化
+  peerConnection.value.onconnectionstatechange = () => {
+    if (peerConnection.value.connectionState === 'disconnected' || 
+        peerConnection.value.connectionState === 'failed') {
+      endVideoCall()
+    }
+  }
+}
+
+// 发送视频信号
+const sendVideoSignal = (data) => {
+  if (!store.ws || store.ws.readyState !== WebSocket.OPEN) {
+    console.error('WebSocket连接未就绪')
+    return
+  }
+  
+  store.ws.send(JSON.stringify({
+    type: 'video-signal',
+    from: userId,
+    ...data
+  }))
+}
+
+// 处理收到的视频信号
+const handleVideoSignal = async (signal) => {
+  if (!peerConnection.value) {
+    // 如果是对方发起的通话，创建连接
+    if (signal.type === 'offer') {
+      try {
+        createPeerConnection()
+        videoCallModal.value = true
+        
+        // 获取本地媒体流
+        localStream.value = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        })
+        
+        // 显示本地视频
+        if (localVideo.value) {
+          localVideo.value.srcObject = localStream.value
+        }
+        
+        // 添加本地流到连接
+        localStream.value.getTracks().forEach(track => {
+          peerConnection.value.addTrack(track, localStream.value)
+        })
+      } catch (error) {
+        console.error('接受视频通话失败:', error)
+        return
+      }
+    } else {
+      return
+    }
+  }
+  
+  try {
+    switch (signal.type) {
+      case 'offer':
+        await peerConnection.value.setRemoteDescription(
+          new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
+        )
+        const answer = await peerConnection.value.createAnswer()
+        await peerConnection.value.setLocalDescription(answer)
+        sendVideoSignal({
+          type: 'answer',
+          sdp: answer.sdp,
+          to: signal.from
+        })
+        break
+        
+      case 'answer':
+        await peerConnection.value.setRemoteDescription(
+          new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
+        )
+        break
+        
+      case 'candidate':
+        try {
+          await peerConnection.value.addIceCandidate(signal.candidate)
+        } catch (e) {
+          console.error('添加ICE候选失败:', e)
+        }
+        break
+    }
+  } catch (error) {
+    console.error('处理视频信号错误:', error)
+  }
+}
+
+// 结束视频通话
+const endVideoCall = () => {
+  if (peerConnection.value) {
+    peerConnection.value.close()
+    peerConnection.value = null
+  }
+  
+  if (localStream.value) {
+    localStream.value.getTracks().forEach(track => track.stop())
+    localStream.value = null
+  }
+  
+  if (localVideo.value) {
+    localVideo.value.srcObject = null
+  }
+  
+  if (remoteVideo.value) {
+    remoteVideo.value.srcObject = null
+  }
+  
+  videoCallModal.value = false
+}
+
+// 切换摄像头
+const toggleCamera = () => {
+  if (!localStream.value) return
+  
+  cameraEnabled.value = !cameraEnabled.value
+  const videoTracks = localStream.value.getVideoTracks()
+  if (videoTracks.length > 0) {
+    videoTracks[0].enabled = cameraEnabled.value
+  }
+}
+
+// 切换麦克风
+const toggleMicrophone = () => {
+  if (!localStream.value) return
+  
+  micEnabled.value = !micEnabled.value
+  const audioTracks = localStream.value.getAudioTracks()
+  if (audioTracks.length > 0) {
+    audioTracks[0].enabled = micEnabled.value
+  }
+}
+
 // 新增表情包 - QQ表情
 const EMOJI_BASE_URL = 'https://unpkg.com/@waline/emojis@1.2.0/tieba'
 const emojis = ref([
@@ -360,7 +613,11 @@ const connectWebSocket = () => {
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data)
-      
+      // 视频信号处理
+      if (message.type === 'video-signal') {
+        handleVideoSignal(message)
+        return
+      }
       // 统一处理所有消息
       if (message.type === 'message') {
         const newMessage = {
@@ -384,6 +641,7 @@ const connectWebSocket = () => {
           store.friends[friendIndex].isOnline = message.online
         }
       }
+
       // 系统消息
       else if (message.type === 'system') {
         console.log('系统消息:', message.message)
@@ -580,11 +838,20 @@ onMounted(async () => {
 
     // 建立WebSocket连接
     store.ws = connectWebSocket()
+
+    // 在组件销毁前清理资源
+    onBeforeUnmount(() => {
+      endVideoCall();
+      if (store.ws) {
+        store.ws.close();
+      }
+    });
   } catch (error) {
     console.error('初始化失败:', error)
     alert('初始化失败，请刷新页面重试')
   }
 })
+
 </script>
 
 <!-- 样式保持不变 -->
@@ -1071,5 +1338,96 @@ z-index: -1;
   border: none;
   border-radius: 20px;
   cursor: pointer;
+}
+
+/* 新增视频通话样式 */
+.video-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.video-container {
+  width: 90%;
+  max-width: 900px;
+  height: 80vh;
+  position: relative;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-container video:first-child {
+  position: absolute;
+  width: 30%;
+  height: 25%;
+  top: 20px;
+  right: 20px;
+  border-radius: 8px;
+  z-index: 10;
+  border: 2px solid white;
+}
+
+.video-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 25px;
+}
+
+.video-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.video-btn img {
+  width: 30px;
+  height: 30px;
+}
+
+.video-btn.end-call {
+  background: #ff4d4d;
+}
+
+.video-btn:hover {
+  transform: scale(1.1);
+}
+
+/* 底栏视频按钮样式 */
+.footer .video-btn {
+  width: 40px;
+  height: 40px;
+  background: white;
+  border-radius: 50%;
+  margin: 0 -11px;
+}
+
+.footer .video-btn img {
+  width: 24px;
+  height: 24px;
 }
 </style>
