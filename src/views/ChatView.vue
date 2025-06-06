@@ -152,10 +152,10 @@
           </button>
           <!-- 修改图标路径引用 -->
           <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img :src='cameraEnabled ? require("./png/camera-on.png") : require("./png/camera-off.png")' alt="切换摄像头">
+            <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
-            <img :src="micEnabled ? require('./png/mic-on.png') : require('./png/mic-off.png')" alt="切换麦克风">
+            <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
           </button>
         </div>
       </div>
@@ -1285,7 +1285,7 @@ outline: none;
 
 /* 发送按钮 */
 .footer button {
-width: 10%;
+width: 8%;
 height: 48px;
 background: gainsboro;
 color: rgb(0, 0, 0);
@@ -1357,7 +1357,7 @@ z-index: -1;
 .avatar-circle:nth-child(7n+7) { background-color: #e0f4f3; } /* 新增浅青绿 */
 
 /* 新增样式 */
-.emoji-btn, .file-btn, .voice-btn {
+.emoji-btn, .file-btn, .voice-btn, .video-btn {
   width: 2%;
   height: 40px;
   display: flex;
@@ -1555,18 +1555,6 @@ z-index: -1;
   gap: 25px;
 }
 
-.video-btn {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-}
 
 .video-btn img {
   width: 30px;
