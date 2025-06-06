@@ -276,15 +276,27 @@ const createPeerConnection = () => {
   // 使用免费的公共 ICE 服务器
   const configuration = {
     iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:global.stun.twilio.com:3478" },
+      { 
+        urls: [
+          'stun:stun.l.google.com:19302',
+          'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302'
+        ]
+      },
       { 
         urls: "turn:openrelay.metered.ca:80",
         username: "openrelayproject",
-        credential: "openrelayproject" 
+        credential: "openrelayproject"
+      },
+      {
+        urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+        username: "webrtc",
+        credential: "webrtc"
       }
     ],
-    iceTransportPolicy: "all" 
+    iceTransportPolicy: 'all'
   }
   
   peerConnection.value = new RTCPeerConnection(configuration)
@@ -401,20 +413,13 @@ const handleVideoError = (type) => {
 // 处理收到的视频信号
 // 修改 handleVideoSignal 方法
 const handleVideoSignal = async (signal) => {
-  console.log('收到视频信号类型:', signal.type || signal.signalType);
+  console.log('收到视频信号:', signal)
   
-  // 优先处理结束信号
+  // 统一处理结束通话信号
   if (signal.signalType === 'end-call') {
-    console.log('收到结束通话信号');
-    endVideoCall();
-    return;
-  }
-  
-  // 新增offer处理逻辑
-  if (signal.type === 'offer' && !peerConnection.value) {
-    console.log('收到通话邀请，创建连接');
-    videoCallModal.value = true; // 触发弹窗
-    await initReceiverConnection(signal); // 初始化接收方连接
+    console.log('收到结束通话信号')
+    endVideoCall()
+    return
   }
   
   // 处理通话请求（offer）
@@ -455,12 +460,6 @@ const handleVideoSignal = async (signal) => {
         new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
       )
       
-      // 处理缓存的候选队列
-      pendingCandidates.forEach(c => {
-        peerConnection.value.addIceCandidate(c);
-      });
-      pendingCandidates = []; // 清空缓存队列
-      
       // 创建answer
       const answer = await peerConnection.value.createAnswer()
       await peerConnection.value.setLocalDescription(answer)
@@ -499,42 +498,22 @@ const handleVideoSignal = async (signal) => {
       case 'candidate':
         console.log('收到ICE候选')
         if (signal.candidate) {
-          if (!peerConnection.value.remoteDescription) {
-            pendingCandidates.push(signal.candidate);
-          } else {
-            await peerConnection.value.addIceCandidate(
-              new RTCIceCandidate(signal.candidate)
-            )
-          }
+          await peerConnection.value.addIceCandidate(
+            new RTCIceCandidate(signal.candidate)
+          )
         }
         break
     }
   } catch (error) {
     console.error('处理视频信号错误:', error)
   }
+
 }
 
 // 结束通话时添加资源清理
 const endVideoCall = () => {
   console.log('结束视频通话');
-  // 添加状态锁防止重复执行
-  if (isEnding) return; 
-  isEnding = true;
-
-  // 发送结束信号前检查连接状态
-  if (store.ws?.readyState === WebSocket.OPEN) {
-    store.ws.send(JSON.stringify({
-      type: 'video-signal',
-      signalType: 'end-call',
-      to: store.currentChat
-    }));
-  }
-
-  // 清空ICE候选队列
-  pendingCandidates = [];
-
-  // 延迟重置状态
-  setTimeout(() => isEnding = false, 1000);
+  
   // 发送结束信号（确保服务端能处理）
   if (store.currentChat && store.ws?.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify({
