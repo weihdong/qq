@@ -462,7 +462,7 @@ const handleVideoSignal = async (signal) => {
     try {
       switch (signal.type) {
         case 'offer':
-          console.log('收到offer（已有连接）')
+          console.log('收到offer 已有连接')
           await peerConnection.value.setRemoteDescription(
             { type: 'offer', sdp: signal.sdp }
           )
@@ -1555,6 +1555,18 @@ z-index: -1;
   gap: 25px;
 }
 
+.video-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
 
 .video-btn img {
   width: 30px;
@@ -1582,7 +1594,7 @@ z-index: -1;
 .footer .video-btn {
   width: 40px;
   height: 40px;
-  background: white;
+  background: gainsboro;
   border-radius: 50%;
   margin: 0 -11px;
 }
