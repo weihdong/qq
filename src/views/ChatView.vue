@@ -208,75 +208,81 @@ onBeforeUnmount(() => {
   endVideoCall()
 })
 
-// 修改 startVideoCall 方法（简化媒体约束）
+// 修改 startVideoCall 方法（添加音频处理）
 const startVideoCall = async () => {
   if (!store.currentChat) {
-    alert('请先选择好友')
-    return
+    alert('请先选择好友');
+    return;
   }
   
   try {
-    videoCallModal.value = true
-    await nextTick()
+    videoCallModal.value = true;
+    await nextTick();
     
-    // 简化媒体约束，避免 OverconstrainedError
-    localStream.value = await navigator.mediaDevices.getUserMedia({ 
-      video: true, 
-      audio: true 
-    }).catch(error => {
-      console.warn('获取媒体流失败:', error)
-      // 尝试更宽松的约束
-      return navigator.mediaDevices.getUserMedia({ video: true })
-    })
+    // 获取媒体流（确保音频启用）
+    const constraints = { 
+      video: { facingMode: "user" }, // 更兼容的约束
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    };
     
-    createPeerConnection()
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+      .catch(async () => {
+        // 回退方案
+        return await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
+      });
     
-    // 添加本地流
+    createPeerConnection();
+    
+    // 添加所有轨道
     localStream.value.getTracks().forEach(track => {
-      peerConnection.value.addTrack(track, localStream.value)
-    })
+      peerConnection.value.addTrack(track, localStream.value);
+    });
     
     // 显示本地视频
     if (localVideo.value) {
-      localVideo.value.srcObject = localStream.value
-      localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
+      localVideo.value.srcObject = localStream.value;
+      localVideo.value.muted = true;
+      localVideo.value.play().catch(e => {
+        console.error('本地视频播放失败:', e);
+        // 处理自动播放策略
+        document.body.click();
+        setTimeout(() => localVideo.value.play(), 500);
+      });
     }
     
     // 创建offer
     const offer = await peerConnection.value.createOffer({
       offerToReceiveVideo: true,
       offerToReceiveAudio: true
-    })
+    });
     
-    await peerConnection.value.setLocalDescription(offer)
+    await peerConnection.value.setLocalDescription(offer);
     
-    // 发送offer给好友（添加明确的信号类型）
+    // 发送offer
     sendVideoSignal({
-      signalType: 'offer', // 统一使用 signalType 字段
+      signalType: 'offer',
       sdp: offer.sdp,
       to: store.currentChat
-    })
+    });
   } catch (error) {
-    console.error('启动视频通话失败:', error)
-    alert(`视频通话错误: ${error.message}`)
-    endVideoCall()
+    console.error('启动视频通话失败:', error);
+    alert(`视频通话错误: ${error.message}`);
+    endVideoCall();
   }
-}
+};
 
-// 增强ICE服务器配置
+// 修改 createPeerConnection 方法（修复轨道处理）
 const createPeerConnection = () => {
-  // 使用免费的公共 ICE 服务器
   const configuration = {
     iceServers: [
-      { 
-        urls: [
-          'stun:stun.l.google.com:19302',
-          'stun:stun1.l.google.com:19302',
-          'stun:stun2.l.google.com:19302',
-          'stun:stun3.l.google.com:19302',
-          'stun:stun4.l.google.com:19302'
-        ]
-      },
+      { urls: 'stun:stun.l.google.com:19302' },
       { 
         urls: "turn:openrelay.metered.ca:80",
         username: "openrelayproject",
@@ -287,90 +293,78 @@ const createPeerConnection = () => {
         username: "webrtc",
         credential: "webrtc"
       }
-    ],
-    iceTransportPolicy: 'all'
-  }
+    ]
+  };
   
-  peerConnection.value = new RTCPeerConnection(configuration)
-  console.log('创建新的RTCPeerConnection')
+  peerConnection.value = new RTCPeerConnection(configuration);
   
-  // 其他处理逻辑保持不变...
-
-
-  
-  // ICE候选处理
-  peerConnection.value.onicecandidate = (event) => {
-    if (event.candidate) {
-      console.log('发现ICE候选:', event.candidate)
-      sendVideoSignal({
-        type: 'candidate',
-        candidate: {
-          candidate: event.candidate.candidate,
-          sdpMid: event.candidate.sdpMid,
-          sdpMLineIndex: event.candidate.sdpMLineIndex,
-          usernameFragment: event.candidate.usernameFragment
-        },
-        to: store.currentChat
-      })
-    } else {
-      console.log('所有ICE候选收集完成')
-    }
-  }
-  
-  // 增强的ontrack处理
+  // 修复轨道处理 - 确保正确添加所有轨道
   peerConnection.value.ontrack = (event) => {
-    console.log('收到远程轨道:', event.track.kind)
+    console.log('收到远程轨道:', event.streams.length);
     
     // 处理多流情况
-    const remoteStream = new MediaStream();
-    event.streams.forEach(stream => {
-      stream.getTracks().forEach(track => {
-        remoteStream.addTrack(track);
-      });
-    });
-    
-    // 添加单轨道情况
-    if (event.track) {
-      remoteStream.addTrack(event.track);
-    }
-
-    // 设置视频源
-    if (remoteVideo.value) {
-      remoteVideo.value.srcObject = remoteStream;
-      console.log('已设置远程视频源，轨道数量:', remoteStream.getTracks().length);
+    if (!remoteVideo.value.srcObject && event.streams.length > 0) {
+      remoteVideo.value.srcObject = event.streams[0];
       
-      // 添加错误监听
+      // 添加播放错误处理
       remoteVideo.value.onerror = (e) => {
-        console.error('远程视频错误:', e);
+        console.error('远程视频播放错误:', e);
+        // 尝试重新设置源
+        setTimeout(() => {
+          remoteVideo.value.srcObject = event.streams[0];
+          remoteVideo.value.play().catch(console.error);
+        }, 500);
       };
       
       remoteVideo.value.onloadedmetadata = () => {
         console.log('远程视频元数据加载完成');
         remoteVideo.value.play().catch(e => {
           console.error('播放失败:', e);
+          // 尝试强制播放
+          document.body.click(); // 解决浏览器自动播放策略
+          setTimeout(() => remoteVideo.value.play(), 1000);
         });
       };
     }
-  }
-  
-  // 连接状态变化
-  peerConnection.value.onconnectionstatechange = () => {
-    console.log('连接状态变化:', peerConnection.value.connectionState)
-    if (peerConnection.value.connectionState === 'disconnected' || 
-        peerConnection.value.connectionState === 'failed') {
-      console.log('连接断开，结束通话')
-      endVideoCall()
-    }
-  }
-  peerConnection.value.oniceconnectionstatechange = () => {
-    console.log('ICE连接状态:', peerConnection.value.iceConnectionState);
-    if (['disconnected', 'failed'].includes(peerConnection.value.iceConnectionState)) {
-      console.log('连接失败，尝试重新协商');
-      startVideoCall(); // 重新尝试连接
-    }
-  }
+  };
 
-}
+  // 增强ICE候选处理
+  peerConnection.value.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendVideoSignal({
+        signalType: 'candidate',
+        candidate: event.candidate,
+        to: store.currentChat
+      });
+    }
+  };
+
+  // 连接状态处理（防止死循环）
+  peerConnection.value.onconnectionstatechange = () => {
+    const state = peerConnection.value.connectionState;
+    console.log('连接状态变化:', state);
+    connectionState.value = state;
+    
+    // 仅在这些状态下结束通话
+    if (['disconnected', 'failed', 'closed'].includes(state)) {
+      console.log('连接断开，结束通话');
+      endVideoCall();
+    }
+  };
+
+  peerConnection.value.oniceconnectionstatechange = () => {
+    const iceState = peerConnection.value.iceConnectionState;
+    console.log('ICE连接状态:', iceState);
+    
+    // 仅在失败时尝试重连
+    if (iceState === 'failed') {
+      console.log('ICE连接失败，尝试重新协商');
+      if (peerConnection.value.signalingState !== 'closed') {
+        startVideoCall(); // 重新尝试连接
+      }
+    }
+  };
+};
 
 // 修改 sendVideoSignal 方法（统一信号格式）
 const sendVideoSignal = (data) => {
@@ -400,91 +394,100 @@ const handleVideoError = (type) => {
 }
 
 // 处理收到的视频信号
-// 修改 handleVideoSignal 方法（修复信号处理）
+// 修改 handleVideoSignal 方法（修复远程流处理）
 const handleVideoSignal = async (signal) => {
-  console.log('收到视频信号:', signal)
+  console.log('收到视频信号:', signal);
   
-  // 统一处理结束通话信号
   if (signal.signalType === 'end-call') {
-    console.log('收到结束通话信号')
-    endVideoCall()
-    return
+    console.log('收到结束通话信号');
+    endVideoCall();
+    return;
   }
   
   // 处理通话请求（offer）
   if (signal.signalType === 'offer') {
     try {
-      videoCallModal.value = true
-      await nextTick()
+      videoCallModal.value = true;
+      await nextTick();
       
-      createPeerConnection()
+      // 结束现有通话（如果有）
+      if (peerConnection.value) endVideoCall();
       
-      // 获取本地媒体流（简化约束）
+      createPeerConnection();
+      
+      // 获取本地媒体流（确保音频）
       localStream.value = await navigator.mediaDevices.getUserMedia({ 
         video: true, 
         audio: true 
-      }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }))
+      });
       
-      // 添加本地流
+      // 添加本地轨道
       localStream.value.getTracks().forEach(track => {
-        peerConnection.value.addTrack(track, localStream.value)
-      })
+        peerConnection.value.addTrack(track, localStream.value);
+      });
       
       // 显示本地视频
       if (localVideo.value) {
-        localVideo.value.srcObject = localStream.value
-        localVideo.value.play().catch(e => console.error('本地视频播放失败:', e))
+        localVideo.value.srcObject = localStream.value;
+        localVideo.value.muted = true;
+        localVideo.value.play().catch(e => console.error('本地视频播放失败:', e));
       }
       
       // 处理offer
       await peerConnection.value.setRemoteDescription(
         new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
-      )
+      );
       
       // 创建answer
-      const answer = await peerConnection.value.createAnswer()
-      await peerConnection.value.setLocalDescription(answer)
+      const answer = await peerConnection.value.createAnswer();
+      await peerConnection.value.setLocalDescription(answer);
       
-      // 发送answer（统一 signalType 字段）
+      // 发送answer
       sendVideoSignal({
         signalType: 'answer',
         sdp: answer.sdp,
         to: signal.from
-      })
+      });
     } catch (error) {
-      console.error('接受视频通话失败:', error)
-      endVideoCall()
+      console.error('接受视频通话失败:', error);
+      endVideoCall();
     }
-    return
+    return;
   }
   
-  // 其他信号处理
-  if (!peerConnection.value) return
-  
-  try {
-    switch (signal.signalType) {
-      case 'answer':
-        await peerConnection.value.setRemoteDescription(
-          new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
-        )
-        break
-        
-      case 'candidate':
-        if (signal.candidate) {
-          await peerConnection.value.addIceCandidate(
-            new RTCIceCandidate(signal.candidate)
-          )
-        }
-        break
+  // 处理answer
+  if (signal.signalType === 'answer' && peerConnection.value) {
+    try {
+      await peerConnection.value.setRemoteDescription(
+        new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
+      );
+    } catch (error) {
+      console.error('设置远程描述失败:', error);
     }
-  } catch (error) {
-    console.error('处理视频信号错误:', error)
+    return;
   }
-}
-// 修改 endVideoCall 方法（添加资源清理）
+  
+  // 处理candidate
+  if (signal.signalType === 'candidate' && peerConnection.value) {
+    try {
+      if (signal.candidate) {
+        await peerConnection.value.addIceCandidate(
+          new RTCIceCandidate(signal.candidate)
+        );
+      }
+    } catch (error) {
+      console.error('添加ICE候选失败:', error);
+    }
+  }
+};
+// 修改 endVideoCall 方法（彻底清理资源）
 const endVideoCall = () => {
   console.log('结束视频通话');
   
+  // 防止重复调用
+  if (!peerConnection.value && !localStream.value) return;
+  
+  // 发送结束信号
   if (store.currentChat && store.ws?.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify({
       type: 'video-signal',
@@ -495,19 +498,40 @@ const endVideoCall = () => {
 
   // 清理资源
   if (peerConnection.value) {
+    // 移除所有事件监听器
+    peerConnection.value.onicecandidate = null;
+    peerConnection.value.ontrack = null;
+    peerConnection.value.onnegotiationneeded = null;
+    peerConnection.value.onicecandidateerror = null;
+    peerConnection.value.onsignalingstatechange = null;
+    peerConnection.value.oniceconnectionstatechange = null;
+    peerConnection.value.onconnectionstatechange = null;
+    
+    // 关闭连接
     peerConnection.value.close();
     peerConnection.value = null;
   }
   
   if (localStream.value) {
-    localStream.value.getTracks().forEach(track => track.stop());
+    localStream.value.getTracks().forEach(track => {
+      track.stop(); // 停止所有轨道
+      track.enabled = false;
+    });
     localStream.value = null;
   }
   
-  if (localVideo.value) localVideo.value.srcObject = null;
-  if (remoteVideo.value) remoteVideo.value.srcObject = null;
+  if (localVideo.value && localVideo.value.srcObject) {
+    localVideo.value.srcObject = null;
+    localVideo.value.pause();
+  }
+  
+  if (remoteVideo.value && remoteVideo.value.srcObject) {
+    remoteVideo.value.srcObject = null;
+    remoteVideo.value.pause();
+  }
   
   videoCallModal.value = false;
+  connectionState.value = '';
 };
 
 // 切换摄像头
