@@ -179,7 +179,7 @@ import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
-import { RTCPeerConnection, RTCSessionDescription } from 'webrtc-adapter'
+
 
 const router = useRouter()
 const store = useChatStore()
