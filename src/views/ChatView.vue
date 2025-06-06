@@ -150,13 +150,18 @@
           <button class="video-btn end-call" @click="endVideoCall">
             <img src="./png/end-call.png" alt="结束通话">
           </button>
+          <!-- 修改图标路径引用 -->
           <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img :src='cameraEnabled ? "/png/camera-on.png" : "/png/camera-off.png"' alt="切换摄像头">
+            <img :src='cameraEnabled ? require("./png/camera-on.png") : require("./png/camera-off.png")' alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
-            <img :src="micEnabled ? '/png/mic-on.png' : '/png/mic-off.png'" alt="切换麦克风">
+            <img :src="micEnabled ? require('./png/mic-on.png') : require('./png/mic-off.png')" alt="切换麦克风">
           </button>
         </div>
+      </div>
+      <!-- 在视频模态框中添加状态提示 -->
+      <div class="video-status" v-if="connectionState">
+        连接状态: {{ connectionState }}
       </div>
     </div>
     <!-- 图片预览模态框 -->
@@ -196,106 +201,105 @@ const localStream = ref(null)
 const peerConnection = ref(null)
 const cameraEnabled = ref(true)
 const micEnabled = ref(true)
-
+// 添加连接状态响应式变量
+const connectionState = ref('');
 // 生命周期钩子
 onBeforeUnmount(() => {
   endVideoCall()
 })
 
 // 新增视频通话方法
+// 修改 startVideoCall 方法
 const startVideoCall = async () => {
-  if (!store.currentChat) {
-    alert('请先选择好友')
-    return
-  }
-  
+  // 提前打开模态框确保视频元素存在
+  videoCallModal.value = true;
+  await nextTick(); // 确保DOM更新完成
+
   try {
-    // 简化约束条件，添加回退处理
-    const constraints = { 
-      video: { facingMode: "user" }, // 使用前置摄像头
-      audio: true 
-    }
+    // 添加详细的约束条件
+    const constraints = {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 }
+      },
+      audio: true
+    };
     
-    // 尝试获取媒体流
+    // 获取媒体流并处理可能的权限问题
     localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
       .catch(async error => {
-        console.warn('高清视频失败，尝试基础视频:', error)
-        // 回退到基础视频约束
-        return await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
-        })
-      })
-    
-    // 创建RTCPeerConnection
-    createPeerConnection()
-    
-    // 添加本地流到连接
-    localStream.value.getTracks().forEach(track => {
-      peerConnection.value.addTrack(track, localStream.value)
-    })
-    
-    // 显示本地视频 - 添加播放保护
+        console.error('媒体获取错误:', error);
+        if (error.name === 'NotAllowedError') {
+          alert('请允许摄像头和麦克风权限');
+        }
+        throw error;
+      });
+
+    // 创建PeerConnection
+    createPeerConnection();
+
+    // 确保视频元素存在后再设置源
     if (localVideo.value) {
       localVideo.value.srcObject = localStream.value;
-      localVideo.value.onloadedmetadata = () => {
-        localVideo.value.play().catch(e => {
-          console.error('本地视频播放失败:', e);
-        });
-      };
+      // 添加播放失败处理
+      localVideo.value.onerror = (e) => console.error('本地视频错误:', e);
+      localVideo.value.onloadedmetadata = () => localVideo.value.play().catch(e => {
+        console.error('本地视频播放失败:', e);
+      });
     }
-    
+
+    // 添加轨道到连接
+    localStream.value.getTracks().forEach(track => {
+      peerConnection.value.addTrack(track, localStream.value);
+    });
+
     // 创建offer
     const offer = await peerConnection.value.createOffer({
       offerToReceiveVideo: true,
       offerToReceiveAudio: true
-    })
+    });
     
-    await peerConnection.value.setLocalDescription(offer)
+    await peerConnection.value.setLocalDescription(offer);
     
-    // 发送offer给好友
     sendVideoSignal({
       type: 'offer',
       sdp: offer.sdp,
       to: store.currentChat
-    })
+    });
     
-    // 打开视频模态框
-    videoCallModal.value = true
-    console.log('视频通话已启动，已发送offer')
   } catch (error) {
     console.error('启动视频通话失败:', error);
     alert(`视频通话错误: ${error.message}`);
-    endVideoCall(); // 确保清理资源
+    endVideoCall();
   }
 }
 
+// 增强ICE服务器配置
 const createPeerConnection = () => {
-  // 更新ICE服务器配置
   const configuration = {
     iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
       { 
-        urls: [
-          'stun:stun.l.google.com:19302',
-          'stun:global.stun.twilio.com:3478'
-        ]
+        urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+        username: 'YOUR_TWILIO_USERNAME',
+        credential: 'YOUR_TWILIO_CREDENTIAL'
       },
-      { 
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      },
-      { 
-        urls: "turn:turn.anyfirewall.com:443?transport=tcp",
-        username: "webrtc",
-        credential: "webrtc"
+      {
+        urls: 'turn:numb.viagenie.ca',
+        username: 'your_email@example.com',
+        credential: 'your_password'
       }
     ],
-    iceTransportPolicy: 'all' // 同时尝试UDP和TCP
-  }
+    iceTransportPolicy: 'relay' // 强制使用TURN服务器穿透NAT
+  };
   
-  peerConnection.value = new RTCPeerConnection(configuration)
-  console.log('创建新的RTCPeerConnection')
+  peerConnection.value = new RTCPeerConnection(configuration);
+  console.log('创建新的RTCPeerConnection');
+  
+  // 其他逻辑保持不变...
+
   
   // ICE候选处理
   peerConnection.value.onicecandidate = (event) => {
@@ -361,11 +365,14 @@ const createPeerConnection = () => {
       endVideoCall()
     }
   }
-  
-  // ICE连接状态
   peerConnection.value.oniceconnectionstatechange = () => {
-    console.log('ICE连接状态:', peerConnection.value.iceConnectionState)
+    console.log('ICE连接状态:', peerConnection.value.iceConnectionState);
+    if (['disconnected', 'failed'].includes(peerConnection.value.iceConnectionState)) {
+      console.log('连接失败，尝试重新协商');
+      startVideoCall(); // 重新尝试连接
+    }
   }
+
 }
 
 // 发送视频信号
@@ -386,21 +393,18 @@ const sendVideoSignal = (data) => {
 }
 const handleVideoError = (type) => {
   console.error(`${type}视频元素错误`);
-  if (type === 'remote') {
-    // 尝试重新渲染
-    nextTick(() => {
-      if (remoteVideo.value && peerConnection.value) {
-        const remoteStream = remoteVideo.value.srcObject;
-        if (remoteStream) {
-          remoteVideo.value.srcObject = null;
-          setTimeout(() => {
-            remoteVideo.value.srcObject = remoteStream;
-          }, 100);
-        }
-      }
-    });
-  }
+  nextTick(() => {
+    const videoElement = type === 'local' ? localVideo.value : remoteVideo.value;
+    if (videoElement && videoElement.srcObject) {
+      videoElement.srcObject.getTracks().forEach(track => track.stop());
+      videoElement.srcObject = null;
+      setTimeout(() => {
+        videoElement.srcObject = type === 'local' ? localStream.value : remoteStream.value;
+      }, 500);
+    }
+  })
 }
+
 // 处理收到的视频信号
 const handleVideoSignal = async (signal) => {
   console.log('收到视频信号:', signal)
@@ -1576,7 +1580,16 @@ z-index: -1;
 .video-btn:hover {
   transform: scale(1.1);
 }
-
+.video-status {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  z-index: 100;
+}
 /* 底栏视频按钮样式 */
 .footer .video-btn {
   width: 40px;
