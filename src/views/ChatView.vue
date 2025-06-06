@@ -151,7 +151,7 @@
             <img src="./png/end-call.png" alt="结束通话">
           </button>
           <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img :src="cameraEnabled ? './png/camera-on.png' : './png/camera-off.png'" alt="切换摄像头">
+            <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
             <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
@@ -175,7 +175,7 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chatStore'
 import axios from 'axios'
@@ -197,6 +197,11 @@ const peerConnection = ref(null)
 const cameraEnabled = ref(true)
 const micEnabled = ref(true)
 
+// 生命周期钩子
+onBeforeUnmount(() => {
+  endVideoCall()
+})
+
 // 新增视频通话方法
 const startVideoCall = async () => {
   if (!store.currentChat) {
@@ -205,11 +210,22 @@ const startVideoCall = async () => {
   }
   
   try {
-    // 获取本地媒体流
-    localStream.value = await navigator.mediaDevices.getUserMedia({ 
-      video: true, 
+    // 简化约束条件，添加回退处理
+    const constraints = { 
+      video: { facingMode: "user" }, // 使用前置摄像头
       audio: true 
-    })
+    }
+    
+    // 尝试获取媒体流
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+      .catch(async error => {
+        console.warn('高清视频失败，尝试基础视频:', error)
+        // 回退到基础视频约束
+        return await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        })
+      })
     
     // 创建RTCPeerConnection
     createPeerConnection()
@@ -225,7 +241,11 @@ const startVideoCall = async () => {
     }
     
     // 创建offer
-    const offer = await peerConnection.value.createOffer()
+    const offer = await peerConnection.value.createOffer({
+      offerToReceiveVideo: true,
+      offerToReceiveAudio: true
+    })
+    
     await peerConnection.value.setLocalDescription(offer)
     
     // 发送offer给好友
@@ -237,9 +257,10 @@ const startVideoCall = async () => {
     
     // 打开视频模态框
     videoCallModal.value = true
+    console.log('视频通话已启动，已发送offer')
   } catch (error) {
     console.error('启动视频通话失败:', error)
-    alert('无法访问摄像头/麦克风，请检查权限设置')
+    alert(`无法访问摄像头/麦克风: ${error.message}`)
   }
 }
 
@@ -248,38 +269,62 @@ const createPeerConnection = () => {
   const configuration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { 
+        urls: 'turn:numb.viagenie.ca',
+        credential: 'muazkh',
+        username: 'webrtc@live.com'
+      }
     ]
   }
   
   peerConnection.value = new RTCPeerConnection(configuration)
+  console.log('创建新的RTCPeerConnection')
   
   // ICE候选处理
   peerConnection.value.onicecandidate = (event) => {
     if (event.candidate) {
+      console.log('发现ICE候选:', event.candidate)
       sendVideoSignal({
         type: 'candidate',
-        candidate: event.candidate,
+        candidate: {
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex,
+          usernameFragment: event.candidate.usernameFragment
+        },
         to: store.currentChat
       })
+    } else {
+      console.log('所有ICE候选收集完成')
     }
   }
   
   // 远程流处理
   peerConnection.value.ontrack = (event) => {
+    console.log('收到远程轨道:', event.track.kind)
     if (event.streams && event.streams[0]) {
       if (remoteVideo.value) {
         remoteVideo.value.srcObject = event.streams[0]
+        console.log('已设置远程视频源')
       }
     }
   }
   
   // 连接状态变化
   peerConnection.value.onconnectionstatechange = () => {
+    console.log('连接状态变化:', peerConnection.value.connectionState)
     if (peerConnection.value.connectionState === 'disconnected' || 
         peerConnection.value.connectionState === 'failed') {
+      console.log('连接断开，结束通话')
       endVideoCall()
     }
+  }
+  
+  // ICE连接状态
+  peerConnection.value.oniceconnectionstatechange = () => {
+    console.log('ICE连接状态:', peerConnection.value.iceConnectionState)
   }
 }
 
@@ -290,19 +335,25 @@ const sendVideoSignal = (data) => {
     return
   }
   
-  store.ws.send(JSON.stringify({
+  const signal = {
     type: 'video-signal',
     from: userId,
     ...data
-  }))
+  }
+  
+  console.log('发送视频信号:', signal)
+  store.ws.send(JSON.stringify(signal))
 }
 
 // 处理收到的视频信号
 const handleVideoSignal = async (signal) => {
+  console.log('收到视频信号:', signal)
+  
   if (!peerConnection.value) {
     // 如果是对方发起的通话，创建连接
     if (signal.type === 'offer') {
       try {
+        console.log('收到offer，创建连接')
         createPeerConnection()
         videoCallModal.value = true
         
@@ -321,51 +372,88 @@ const handleVideoSignal = async (signal) => {
         localStream.value.getTracks().forEach(track => {
           peerConnection.value.addTrack(track, localStream.value)
         })
-      } catch (error) {
-        console.error('接受视频通话失败:', error)
-        return
-      }
-    } else {
-      return
-    }
-  }
-  
-  try {
-    switch (signal.type) {
-      case 'offer':
+        
+        // 处理offer
         await peerConnection.value.setRemoteDescription(
-          new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
+          { type: 'offer', sdp: signal.sdp }
         )
+        
+        // 创建answer
         const answer = await peerConnection.value.createAnswer()
         await peerConnection.value.setLocalDescription(answer)
+        
+        // 发送answer
         sendVideoSignal({
           type: 'answer',
           sdp: answer.sdp,
           to: signal.from
         })
-        break
         
-      case 'answer':
-        await peerConnection.value.setRemoteDescription(
-          new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
-        )
-        break
-        
-      case 'candidate':
-        try {
-          await peerConnection.value.addIceCandidate(signal.candidate)
-        } catch (e) {
-          console.error('添加ICE候选失败:', e)
-        }
-        break
+        console.log('已发送answer')
+      } catch (error) {
+        console.error('接受视频通话失败:', error)
+        alert('接受视频通话失败: ' + error.message)
+      }
+    } else {
+      console.warn('收到非offer信号但无连接')
+      return
     }
-  } catch (error) {
-    console.error('处理视频信号错误:', error)
+  } else {
+    try {
+      switch (signal.type) {
+        case 'offer':
+          console.log('收到offer（已有连接）')
+          await peerConnection.value.setRemoteDescription(
+            { type: 'offer', sdp: signal.sdp }
+          )
+          const answer = await peerConnection.value.createAnswer()
+          await peerConnection.value.setLocalDescription(answer)
+          sendVideoSignal({
+            type: 'answer',
+            sdp: answer.sdp,
+            to: signal.from
+          })
+          console.log('已发送answer')
+          break
+          
+        case 'answer':
+          console.log('收到answer')
+          await peerConnection.value.setRemoteDescription(
+            { type: 'answer', sdp: signal.sdp }
+          )
+          break
+          
+        case 'candidate':
+          console.log('收到ICE候选')
+          if (signal.candidate) {
+            try {
+              await peerConnection.value.addIceCandidate(
+                new RTCIceCandidate(signal.candidate)
+              )
+            } catch (e) {
+              console.error('添加ICE候选失败:', e)
+            }
+          }
+          break
+      }
+    } catch (error) {
+      console.error('处理视频信号错误:', error)
+    }
   }
 }
 
 // 结束视频通话
 const endVideoCall = () => {
+  console.log('结束视频通话')
+  
+  // 发送结束信号
+  if (store.currentChat) {
+    sendVideoSignal({
+      type: 'end-call',
+      to: store.currentChat
+    })
+  }
+  
   if (peerConnection.value) {
     peerConnection.value.close()
     peerConnection.value = null
@@ -395,6 +483,7 @@ const toggleCamera = () => {
   const videoTracks = localStream.value.getVideoTracks()
   if (videoTracks.length > 0) {
     videoTracks[0].enabled = cameraEnabled.value
+    console.log(`摄像头已${cameraEnabled.value ? '开启' : '关闭'}`)
   }
 }
 
@@ -406,6 +495,7 @@ const toggleMicrophone = () => {
   const audioTracks = localStream.value.getAudioTracks()
   if (audioTracks.length > 0) {
     audioTracks[0].enabled = micEnabled.value
+    console.log(`麦克风已${micEnabled.value ? '开启' : '关闭'}`)
   }
 }
 
@@ -616,6 +706,12 @@ const connectWebSocket = () => {
       // 视频信号处理
       if (message.type === 'video-signal') {
         handleVideoSignal(message)
+        return
+      }
+            // 结束通话处理
+      if (message.type === 'end-call') {
+        console.log('收到结束通话信号')
+        endVideoCall()
         return
       }
       // 统一处理所有消息
@@ -839,13 +935,7 @@ onMounted(async () => {
     // 建立WebSocket连接
     store.ws = connectWebSocket()
 
-    // 在组件销毁前清理资源
-    onBeforeUnmount(() => {
-      endVideoCall();
-      if (store.ws) {
-        store.ws.close();
-      }
-    });
+
   } catch (error) {
     console.error('初始化失败:', error)
     alert('初始化失败，请刷新页面重试')
