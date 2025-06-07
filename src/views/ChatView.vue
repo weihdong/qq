@@ -233,8 +233,8 @@ const startVideoCall = async () => {
       .catch(async () => {
         // 回退方案
         return await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
+          video: false, 
+          audio: false 
         });
       });
     
