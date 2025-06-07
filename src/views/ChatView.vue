@@ -208,7 +208,6 @@ onBeforeUnmount(() => {
   endVideoCall()
 })
 
-// 修改 startVideoCall 方法（添加音频处理）
 const startVideoCall = async () => {
   if (!store.currentChat) {
     alert('请先选择好友');
@@ -219,28 +218,27 @@ const startVideoCall = async () => {
     videoCallModal.value = true;
     await nextTick();
     
-    // 获取媒体流（确保音频启用）
+    // 1. 获取媒体流
     const constraints = { 
-      video: { facingMode: "user" }, // 更兼容的约束
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
+      video: true,
+      audio: true
     };
     
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-      .catch(async () => {
-        // 回退方案
-        return await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
-        });
-      });
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints);
     
+    // 2. 立即禁用所有轨道（核心修改）
+    localStream.value.getTracks().forEach(track => {
+      track.enabled = false; // 禁用摄像头和麦克风
+    });
+    
+    // 3. 更新状态变量
+    cameraEnabled.value = false;
+    micEnabled.value = false;
+    
+    // 4. 继续后续流程
     createPeerConnection();
     
-    // 添加所有轨道
+    // 添加轨道（此时轨道已被禁用）
     localStream.value.getTracks().forEach(track => {
       peerConnection.value.addTrack(track, localStream.value);
     });
@@ -251,7 +249,6 @@ const startVideoCall = async () => {
       localVideo.value.muted = true;
       localVideo.value.play().catch(e => {
         console.error('本地视频播放失败:', e);
-        // 处理自动播放策略
         document.body.click();
         setTimeout(() => localVideo.value.play(), 500);
       });
@@ -536,27 +533,24 @@ const endVideoCall = () => {
 
 // 切换摄像头
 const toggleCamera = () => {
-  if (!localStream.value) return
+  if (!localStream.value) return;
   
-  cameraEnabled.value = !cameraEnabled.value
-  const videoTracks = localStream.value.getVideoTracks()
+  cameraEnabled.value = !cameraEnabled.value;
+  const videoTracks = localStream.value.getVideoTracks();
   if (videoTracks.length > 0) {
-    videoTracks[0].enabled = cameraEnabled.value
-    console.log(`摄像头已${cameraEnabled.value ? '开启' : '关闭'}`)
+    videoTracks[0].enabled = cameraEnabled.value;
   }
-}
+};
 
-// 切换麦克风
 const toggleMicrophone = () => {
-  if (!localStream.value) return
+  if (!localStream.value) return;
   
-  micEnabled.value = !micEnabled.value
-  const audioTracks = localStream.value.getAudioTracks()
+  micEnabled.value = !micEnabled.value;
+  const audioTracks = localStream.value.getAudioTracks();
   if (audioTracks.length > 0) {
-    audioTracks[0].enabled = micEnabled.value
-    console.log(`麦克风已${micEnabled.value ? '开启' : '关闭'}`)
+    audioTracks[0].enabled = micEnabled.value;
   }
-}
+};
 
 // 新增表情包 - QQ表情
 const EMOJI_BASE_URL = 'https://unpkg.com/@waline/emojis@1.2.0/tieba'
