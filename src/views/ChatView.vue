@@ -412,13 +412,22 @@ const handleVideoSignal = async (signal) => {
       
       createPeerConnection();
       
-      // 获取本地媒体流（确保音频）
+      // 1. 获取本地媒体流
       localStream.value = await navigator.mediaDevices.getUserMedia({ 
         video: true, 
         audio: true 
       });
       
-      // 添加本地轨道
+      // 2. 立即禁用所有轨道（接收方也默认关闭）
+      localStream.value.getTracks().forEach(track => {
+        track.enabled = false; // 禁用摄像头和麦克风
+      });
+      
+      // 3. 更新状态变量
+      cameraEnabled.value = false;
+      micEnabled.value = false;
+      
+      // 添加本地轨道（禁用状态）
       localStream.value.getTracks().forEach(track => {
         peerConnection.value.addTrack(track, localStream.value);
       });
