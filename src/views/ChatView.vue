@@ -146,16 +146,24 @@
         <video ref="remoteVideo" autoplay playsinline @error="handleVideoError('remote')"></video>
         
         <!-- 控制按钮 -->
+        <!-- 新增两个按钮的模板部分 -->
         <div class="video-controls">
           <button class="video-btn end-call" @click="endVideoCall">
             <img src="./png/end-call.png" alt="结束通话">
           </button>
-          <!-- 修改图标路径引用 -->
           <button class="video-btn toggle-camera" @click="toggleCamera">
             <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
             <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
+          </button>
+          <!-- 新增切换前置后置摄像头按钮 -->
+          <button class="video-btn toggle-facing" @click="toggleCameraFacing">
+            <img :src='facingMode === "user" ? "./png/front-camera.png" : "./png/back-camera.png"' alt="切换摄像头方向">
+          </button>
+          <!-- 新增投屏按钮 -->
+          <button class="video-btn screen-share" @click="toggleScreenShare">
+            <img :src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
           </button>
         </div>
       </div>
@@ -201,6 +209,11 @@ const localStream = ref(null)
 const peerConnection = ref(null)
 const cameraEnabled = ref(true)
 const micEnabled = ref(true)
+// 新增状态变量
+const facingMode = ref('user') // 'user' 前置摄像头, 'environment' 后置摄像头
+const isScreenSharing = ref(false)
+const screenStream = ref(null)
+
 // 添加连接状态响应式变量
 const connectionState = ref('');
 // 生命周期钩子
@@ -501,7 +514,13 @@ const endVideoCall = () => {
       to: store.currentChat
     }));
   }
-
+  // 清理投屏资源
+  if (screenStream.value) {
+    screenStream.value.getTracks().forEach(track => track.stop())
+    screenStream.value = null
+  }
+  
+  isScreenSharing.value = false
   // 清理资源
   if (peerConnection.value) {
     // 移除所有事件监听器
@@ -539,6 +558,131 @@ const endVideoCall = () => {
   videoCallModal.value = false;
   connectionState.value = '';
 };
+// 新增切换前置后置摄像头功能
+const toggleCameraFacing = async () => {
+  try {
+    facingMode.value = facingMode.value === 'user' ? 'environment' : 'user'
+    
+    if (!localStream.value) return
+    
+    // 停止当前视频轨道
+    const videoTrack = localStream.value.getVideoTracks()[0]
+    if (videoTrack) videoTrack.stop()
+    
+    // 获取新摄像头流
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facingMode.value },
+      audio: micEnabled.value
+    })
+    
+    // 替换本地流中的视频轨道
+    const newVideoTrack = newStream.getVideoTracks()[0]
+    const sender = peerConnection.value.getSenders().find(
+      s => s.track.kind === 'video'
+    )
+    
+    if (sender) {
+      await sender.replaceTrack(newVideoTrack)
+    }
+    
+    // 更新本地流
+    localStream.value.getVideoTracks().forEach(track => track.stop())
+    localStream.value.removeTrack(videoTrack)
+    localStream.value.addTrack(newVideoTrack)
+    
+    // 更新视频元素
+    if (localVideo.value) {
+      localVideo.value.srcObject = localStream.value
+    }
+    
+    cameraEnabled.value = true
+  } catch (error) {
+    console.error('切换摄像头失败:', error)
+    alert(`无法切换摄像头: ${error.message}`)
+  }
+}
+
+// 新增投屏功能
+const toggleScreenShare = async () => {
+  try {
+    if (isScreenSharing.value) {
+      // 停止投屏
+      screenStream.value.getTracks().forEach(track => track.stop())
+      screenStream.value = null
+      
+      // 恢复摄像头
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode.value },
+        audio: micEnabled.value
+      })
+      
+      const newVideoTrack = cameraStream.getVideoTracks()[0]
+      const sender = peerConnection.value.getSenders().find(
+        s => s.track.kind === 'video'
+      )
+      
+      if (sender) {
+        await sender.replaceTrack(newVideoTrack)
+      }
+      
+      // 更新本地流
+      localStream.value.getVideoTracks().forEach(track => track.stop())
+      localStream.value.removeTrack(localStream.value.getVideoTracks()[0])
+      localStream.value.addTrack(newVideoTrack)
+      
+      // 更新视频元素
+      if (localVideo.value) {
+        localVideo.value.srcObject = localStream.value
+      }
+      
+      isScreenSharing.value = false
+      cameraEnabled.value = true
+    } else {
+      // 开始投屏
+      screenStream.value = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false
+      })
+      
+      const screenTrack = screenStream.value.getVideoTracks()[0]
+      
+      // 替换视频轨道
+      const sender = peerConnection.value.getSenders().find(
+        s => s.track.kind === 'video'
+      )
+      
+      if (sender) {
+        await sender.replaceTrack(screenTrack)
+      }
+      
+      // 更新本地流
+      localStream.value.getVideoTracks().forEach(track => track.stop())
+      localStream.value.removeTrack(localStream.value.getVideoTracks()[0])
+      localStream.value.addTrack(screenTrack)
+      
+      // 更新视频元素
+      if (localVideo.value) {
+        localVideo.value.srcObject = localStream.value
+      }
+      
+      // 监听投屏结束事件
+      screenTrack.onended = () => {
+        if (isScreenSharing.value) {
+          toggleScreenShare()
+        }
+      }
+      
+      isScreenSharing.value = true
+      cameraEnabled.value = true
+    }
+  } catch (error) {
+    console.error('投屏失败:', error)
+    
+    if (error.name !== 'NotAllowedError') {
+      alert(`投屏失败: ${error.message}`)
+    }
+  }
+}
 
 // 切换摄像头
 const toggleCamera = () => {
@@ -1540,7 +1684,7 @@ z-index: -1;
   right: 0;
   display: flex;
   justify-content: center;
-  gap: 25px;
+  gap: 15px;
 }
 
 .video-btn {
@@ -1564,7 +1708,15 @@ z-index: -1;
 .video-btn.end-call {
   background: #ff4d4d;
 }
-
+/* 新增图标样式 */
+.toggle-facing img, .screen-share img, .toggle-camera img, .toggle-mic img {
+  width: 30px;
+  height: 30px;
+}
+/* 活动状态的投屏按钮 */
+.screen-share.active {
+  background: rgba(76, 175, 80, 0.3);
+}
 .video-btn:hover {
   transform: scale(1.1);
 }
