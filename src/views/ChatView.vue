@@ -157,11 +157,24 @@
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
             <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
           </button>
+            <!-- 新增摄像头切换按钮 -->
+          <button class="video-btn switch-camera" @click="switchCamera">
+            <img :src='cameraFacingMode === "user" ? "./png/front-camera.png" : "./png/back-camera.png"' alt="切换摄像头">
+          </button>
+          
+          <!-- 新增屏幕共享按钮 -->
+          <button class="video-btn screen-share" @click="toggleScreenShare">
+            <img :src='isScreenSharing ? "./png/screen-share-on.png" : "./png/screen-share-off.png"' alt="屏幕共享">
+          </button>
         </div>
       </div>
       <!-- 在视频模态框中添加状态提示 -->
       <div class="video-status" v-if="connectionState">
         连接状态: {{ connectionState }}
+      </div>
+        <!-- 屏幕共享提示 -->
+      <div v-if="isScreenSharing" class="screen-sharing-indicator">
+        正在共享屏幕
       </div>
     </div>
     <!-- 图片预览模态框 -->
@@ -201,6 +214,10 @@ const localStream = ref(null)
 const peerConnection = ref(null)
 const cameraEnabled = ref(true)
 const micEnabled = ref(true)
+// 在 setup() 中新增以下变量
+const cameraFacingMode = ref('user'); // 'user' 前置, 'environment' 后置
+const isScreenSharing = ref(false);
+const screenStream = ref(null); // 存储屏幕共享流
 // 添加连接状态响应式变量
 const connectionState = ref('');
 // 生命周期钩子
@@ -472,7 +489,26 @@ const handleVideoSignal = async (signal) => {
     }
     return;
   }
-  
+  // 处理重新协商信号
+  if (signal.signalType === 'renegotiate' && peerConnection.value) {
+    try {
+      await peerConnection.value.setRemoteDescription(
+        new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
+      );
+      
+      const answer = await peerConnection.value.createAnswer();
+      await peerConnection.value.setLocalDescription(answer);
+      
+      sendVideoSignal({
+        signalType: 'answer',
+        sdp: answer.sdp,
+        to: signal.from
+      });
+    } catch (error) {
+      console.error('处理重新协商失败:', error);
+    }
+    return;
+  }
   // 处理candidate
   if (signal.signalType === 'candidate' && peerConnection.value) {
     try {
@@ -492,7 +528,14 @@ const endVideoCall = () => {
   
   // 防止重复调用
   if (!peerConnection.value && !localStream.value) return;
+
+  // 停止屏幕共享
+  if (screenStream.value) {
+    screenStream.value.getTracks().forEach(track => track.stop());
+    screenStream.value = null;
+  }
   
+  isScreenSharing.value = false;
   // 发送结束信号
   if (store.currentChat && store.ws?.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify({
@@ -539,7 +582,164 @@ const endVideoCall = () => {
   videoCallModal.value = false;
   connectionState.value = '';
 };
+// 切换前置/后置摄像头
+const switchCamera = async () => {
+  try {
+    // 停止当前视频轨道
+    const videoTracks = localStream.value.getVideoTracks();
+    if (videoTracks.length > 0) {
+      videoTracks[0].stop();
+    }
+    
+    // 切换摄像头模式
+    cameraFacingMode.value = cameraFacingMode.value === 'user' ? 'environment' : 'user';
+    
+    // 获取新摄像头的媒体流
+    const constraints = {
+      video: { 
+        facingMode: cameraFacingMode.value,
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    };
+    
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    // 替换视频轨道
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    localStream.value.addTrack(newVideoTrack);
+    
+    // 移除旧轨道
+    if (videoTracks.length > 0) {
+      localStream.value.removeTrack(videoTracks[0]);
+    }
+    
+    // 更新本地视频显示
+    if (localVideo.value) {
+      localVideo.value.srcObject = localStream.value;
+    }
+    
+    // 重新协商连接
+    await renegotiateConnection();
+    
+  } catch (error) {
+    console.error('切换摄像头失败:', error);
+    alert(`无法切换摄像头: ${error.message}`);
+  }
+};
 
+// 重新协商连接
+const renegotiateConnection = async () => {
+  try {
+    const offer = await peerConnection.value.createOffer();
+    await peerConnection.value.setLocalDescription(offer);
+    
+    sendVideoSignal({
+      signalType: 'renegotiate',
+      sdp: offer.sdp,
+      to: store.currentChat
+    });
+  } catch (error) {
+    console.error('重新协商失败:', error);
+  }
+};
+// 切换屏幕共享
+const toggleScreenShare = async () => {
+  try {
+    if (isScreenSharing.value) {
+      // 停止屏幕共享
+      screenStream.value.getTracks().forEach(track => track.stop());
+      screenStream.value = null;
+      
+      // 恢复摄像头
+      const constraints = {
+        video: { 
+          facingMode: cameraFacingMode.value,
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+      
+      const cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const cameraTrack = cameraStream.getVideoTracks()[0];
+      
+      // 替换屏幕共享轨道为摄像头轨道
+      const sender = peerConnection.value.getSenders().find(s => 
+        s.track && s.track.kind === 'video'
+      );
+      
+      if (sender) {
+        sender.replaceTrack(cameraTrack);
+      }
+      
+      // 更新本地流
+      const oldVideoTrack = localStream.value.getVideoTracks()[0];
+      if (oldVideoTrack) {
+        localStream.value.removeTrack(oldVideoTrack);
+      }
+      localStream.value.addTrack(cameraTrack);
+      
+      // 更新本地视频显示
+      if (localVideo.value) {
+        localVideo.value.srcObject = localStream.value;
+      }
+      
+      isScreenSharing.value = false;
+      
+    } else {
+      // 开始屏幕共享
+      screenStream.value = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: "always",
+          displaySurface: "monitor"
+        },
+        audio: false
+      });
+      
+      const screenTrack = screenStream.value.getVideoTracks()[0];
+      
+      // 替换摄像头轨道为屏幕共享轨道
+      const sender = peerConnection.value.getSenders().find(s => 
+        s.track && s.track.kind === 'video'
+      );
+      
+      if (sender) {
+        sender.replaceTrack(screenTrack);
+      }
+      
+      // 更新本地流
+      const oldVideoTrack = localStream.value.getVideoTracks()[0];
+      if (oldVideoTrack) {
+        oldVideoTrack.stop();
+        localStream.value.removeTrack(oldVideoTrack);
+      }
+      localStream.value.addTrack(screenTrack);
+      
+      // 更新本地视频显示
+      if (localVideo.value) {
+        localVideo.value.srcObject = localStream.value;
+      }
+      
+      isScreenSharing.value = true;
+      
+      // 当用户停止共享时恢复摄像头
+      screenTrack.onended = () => {
+        if (isScreenSharing.value) {
+          toggleScreenShare();
+        }
+      };
+    }
+    
+    // 重新协商连接
+    await renegotiateConnection();
+    
+  } catch (error) {
+    if (error.name !== 'NotAllowedError') {
+      console.error('屏幕共享失败:', error);
+      alert(`屏幕共享失败: ${error.message}`);
+    }
+  }
+};
 // 切换摄像头
 const toggleCamera = () => {
   if (!localStream.value) return;
@@ -1534,18 +1734,15 @@ z-index: -1;
 }
 
 .video-controls {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
   display: flex;
   justify-content: center;
-  gap: 25px;
+  gap: 15px;
+  flex-wrap: wrap;
 }
 
 .video-btn {
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -1566,6 +1763,7 @@ z-index: -1;
 }
 
 .video-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
   transform: scale(1.1);
 }
 .video-status {
@@ -1590,5 +1788,17 @@ z-index: -1;
 .footer .video-btn img {
   width: 24px;
   height: 24px;
+}
+/* 屏幕共享状态提示 */
+.screen-sharing-indicator {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  z-index: 10;
 }
 </style>
