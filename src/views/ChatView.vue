@@ -152,10 +152,10 @@
             <img src="./png/end-call.png" alt="结束通话">
           </button>
           <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img src="cameraEnabled ? './png/camera-on.png' : './png/camera-off.png'" alt="切换摄像头">
+            <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
-            <img src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
+            <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
           </button>
           <!-- 新增切换前置后置摄像头按钮 -->
           <button class="video-btn toggle-facing" @click="toggleCameraFacing">
@@ -163,7 +163,7 @@
           </button>
           <!-- 新增投屏按钮 -->
           <button class="video-btn screen-share" @click="toggleScreenShare">
-            <img src="isScreenSharing ? './png/screen-share-active.png' : './png/screen-share.png'" alt="投屏">
+            <img :src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
           </button>
         </div>
       </div>
