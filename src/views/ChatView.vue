@@ -159,7 +159,7 @@
           </button>
           <!-- 新增切换前置后置摄像头按钮 -->
           <button class="video-btn toggle-facing" @click="toggleCameraFacing">
-            <img :src='facingMode === "user" ? "./png/front-camera.png" : "./png/back-camera.png"' alt="切换摄像头方向">
+            <img :src="./png/switch-camera.png" alt="切换摄像头方向">
           </button>
           <!-- 新增投屏按钮 -->
           <button class="video-btn screen-share" @click="toggleScreenShare">
@@ -1685,6 +1685,7 @@ z-index: -1;
   display: flex;
   justify-content: center;
   gap: 15px;
+  z-index: 1001;
 }
 
 .video-btn {
@@ -1698,6 +1699,7 @@ z-index: -1;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s;
+  z-index: 1002;
 }
 
 .video-btn img {
