@@ -152,7 +152,7 @@
             <img src="./png/end-call.png" alt="结束通话">
           </button>
           <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
+            <img :="./png/camera-on.png" alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
             <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
