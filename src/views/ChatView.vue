@@ -144,44 +144,43 @@
         
         <!-- 远程视频流 -->
         <video ref="remoteVideo" autoplay playsinline @error="handleVideoError('remote')"></video>
-        
-        <!-- 控制按钮 -->
-        <div class="video-controls">
-          <button class="video-btn end-call" @click="endVideoCall">
-            <img src="./png/end-call.png" alt="结束通话">
-          </button>
-          <!-- 修改图标路径引用 -->
-          <button class="video-btn toggle-camera" @click="toggleCamera">
-            <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
-          </button>
-          <button class="video-btn toggle-mic" @click="toggleMicrophone">
-            <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
-          </button>
-            <!-- 新增摄像头切换按钮 -->
-          <button class="video-btn switch-camera" @click="switchCamera">
-            <img :src='cameraFacingMode === "user" ? "./png/front-camera.png" : "./png/back-camera.png"' alt="切换摄像头">
-          </button>
+      </div>
+    </div>
           
-          <!-- 新增屏幕共享按钮 -->
-          <button class="video-btn screen-share" @click="toggleScreenShare">
-            <img :src='isScreenSharing ? "./png/screen-share-on.png" : "./png/screen-share-off.png"' alt="屏幕共享">
-          </button>
-        </div>
-      </div>
-      <!-- 在视频模态框中添加状态提示 -->
-      <div class="video-status" v-if="connectionState">
-        连接状态: {{ connectionState }}
-      </div>
-        <!-- 屏幕共享提示 -->
-      <div v-if="isScreenSharing" class="screen-sharing-indicator">
-        正在共享屏幕
-      </div>
+    <!-- 在视频模态框中添加状态提示 -->
+    <div class="video-status" v-if="connectionState">
+      连接状态: {{ connectionState }}
     </div>
-    <!-- 图片预览模态框 -->
-    <div v-if="previewImage" class="image-preview-modal" @click="previewImage = null">
-      <img :src="previewImage" class="full-image">
+     
+    <!-- 屏幕共享提示 -->
+    <div v-if="isScreenSharing" class="screen-sharing-indicator">
+      正在共享屏幕
     </div>
-    
+
+        
+    <!-- 控制按钮 -->
+    <div class="video-controls">
+      <button class="video-btn end-call" @click="endVideoCall">
+        <img src="./png/end-call.png" alt="结束通话">
+      </button>
+      <!-- 修改图标路径引用 -->
+      <button class="video-btn toggle-camera" @click="toggleCamera">
+        <img :src='cameraEnabled ? "./png/camera-on.png" : "./png/camera-off.png"' alt="切换摄像头">
+      </button>
+      <button class="video-btn toggle-mic" @click="toggleMicrophone">
+        <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
+      </button>
+        <!-- 新增摄像头切换按钮 -->
+      <button class="video-btn switch-camera" @click="switchCamera">
+        <img :src='cameraFacingMode === "user" ? "./png/front-camera.png" : "./png/back-camera.png"' alt="切换摄像头">
+      </button>
+      
+      <!-- 新增屏幕共享按钮 -->
+      <button class="video-btn screen-share" @click="toggleScreenShare">
+        <img :src='isScreenSharing ? "./png/screen-share-on.png" : "./png/screen-share-off.png"' alt="屏幕共享">
+      </button>
+    </div>
+
     <!-- 录音指示器 -->
     <div v-if="isRecording" class="recording-overlay">
       <div class="recording-indicator">
@@ -189,6 +188,11 @@
         <div class="text">录制中... {{ recordingDuration }}秒</div>
         <button class="cancel-btn" @click="cancelRecording">完成</button>
       </div>
+    </div>
+       
+    <!-- 图片预览模态框 -->
+    <div v-if="previewImage" class="image-preview-modal" @click="previewImage = null">
+      <img :src="previewImage" class="full-image">
     </div>
   </div>
 </template>
@@ -489,6 +493,20 @@ const handleVideoSignal = async (signal) => {
     }
     return;
   }
+    // 处理轨道更新通知
+  if (signal.signalType === 'track-updated') {
+    // 重新创建远程视频源
+    if (remoteVideo.value && remoteVideo.value.srcObject) {
+      remoteVideo.value.srcObject = null;
+      remoteVideo.value.srcObject = peerConnection.value.getRemoteStreams()[0];
+      remoteVideo.value.play().catch(e => {
+        console.error('重新播放远程视频失败:', e);
+        document.body.click();
+        setTimeout(() => remoteVideo.value.play(), 500);
+      });
+    }
+    return;
+  }
   // 处理重新协商信号
   if (signal.signalType === 'renegotiate' && peerConnection.value) {
     try {
@@ -583,12 +601,22 @@ const endVideoCall = () => {
   connectionState.value = '';
 };
 // 切换前置/后置摄像头
+// 修改 switchCamera 函数
 const switchCamera = async () => {
   try {
+    // 获取当前视频发送者
+    const senders = peerConnection.value.getSenders();
+    const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+    
+    if (!videoSender) {
+      throw new Error('找不到视频发送者');
+    }
+    
     // 停止当前视频轨道
-    const videoTracks = localStream.value.getVideoTracks();
-    if (videoTracks.length > 0) {
-      videoTracks[0].stop();
+    const currentVideoTrack = localStream.value.getVideoTracks()[0];
+    if (currentVideoTrack) {
+      currentVideoTrack.stop();
+      localStream.value.removeTrack(currentVideoTrack);
     }
     
     // 切换摄像头模式
@@ -604,23 +632,29 @@ const switchCamera = async () => {
     };
     
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-    
-    // 替换视频轨道
     const newVideoTrack = newStream.getVideoTracks()[0];
+    
+    // 添加新轨道到本地流
     localStream.value.addTrack(newVideoTrack);
     
-    // 移除旧轨道
-    if (videoTracks.length > 0) {
-      localStream.value.removeTrack(videoTracks[0]);
-    }
+    // 替换发送者轨道 - 关键修复
+    await videoSender.replaceTrack(newVideoTrack);
     
     // 更新本地视频显示
     if (localVideo.value) {
       localVideo.value.srcObject = localStream.value;
     }
     
-    // 重新协商连接
-    await renegotiateConnection();
+    // 关闭不再使用的流
+    newStream.getTracks().forEach(track => {
+      if (track !== newVideoTrack) track.stop();
+    });
+    
+    // 发送更新通知
+    sendVideoSignal({
+      signalType: 'track-updated',
+      to: store.currentChat
+    });
     
   } catch (error) {
     console.error('切换摄像头失败:', error);
@@ -1693,6 +1727,7 @@ z-index: -1;
 }
 
 /* 新增视频通话样式 */
+/* 修改样式 */
 .video-modal {
   position: fixed;
   top: 0;
@@ -1702,6 +1737,7 @@ z-index: -1;
   background: rgba(0, 0, 0, 0.9);
   z-index: 2000;
   display: flex;
+  flex-direction: column; /* 改为列布局 */
   justify-content: center;
   align-items: center;
 }
@@ -1709,11 +1745,12 @@ z-index: -1;
 .video-container {
   width: 90%;
   max-width: 900px;
-  height: 80vh;
+  height: 70vh; /* 减少高度，为控制栏留空间 */
   position: relative;
   background: #000;
   border-radius: 10px;
   overflow: hidden;
+  margin-bottom: 20px; /* 添加间距 */
 }
 
 .video-container video {
@@ -1734,18 +1771,19 @@ z-index: -1;
 }
 
 .video-controls {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
+  position: relative; /* 改为相对定位 */
   display: flex;
   justify-content: center;
-  gap: 25px;
+  gap: 15px;
+  z-index: 1001; /* 确保在视频上方 */
+  background: rgba(0, 0, 0, 0.5);
+  padding: 15px;
+  border-radius: 30px;
 }
 
 .video-btn {
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -1754,11 +1792,14 @@ z-index: -1;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s;
+  z-index: 1002; /* 更高层级 */
 }
 
+/* 确保按钮图标可见 */
 .video-btn img {
   width: 30px;
   height: 30px;
+  filter: invert(1); /* 白色图标 */
 }
 
 .video-btn.end-call {
@@ -1766,7 +1807,12 @@ z-index: -1;
 }
 
 .video-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
   transform: scale(1.1);
+}
+/* 添加按钮激活效果 */
+.video-btn:active {
+  transform: scale(0.95);
 }
 .video-status {
   position: absolute;
