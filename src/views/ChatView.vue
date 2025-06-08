@@ -155,7 +155,7 @@
             <img :src="'./png/camera-on.png'" alt="切换摄像头">
           </button>
           <button class="video-btn toggle-mic" @click="toggleMicrophone">
-            <img :src="micEnabled ? './png/mic-on.png' : './png/mic-off.png'" alt="切换麦克风">
+            <img :src="micEnabled ? '/png/mic-on.png' : '/png/mic-off.png'" alt="切换麦克风">
           </button>
           <!-- 新增切换前置后置摄像头按钮 -->
           <button class="video-btn toggle-facing" @click="toggleCameraFacing">
@@ -605,6 +605,10 @@ const toggleCameraFacing = async () => {
 // 新增投屏功能
 const toggleScreenShare = async () => {
   try {
+        // 检查浏览器是否支持投屏功能
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('您的浏览器不支持屏幕共享功能');
+    }
     if (isScreenSharing.value) {
       // 停止投屏
       screenStream.value.getTracks().forEach(track => track.stop())
@@ -642,8 +646,15 @@ const toggleScreenShare = async () => {
       screenStream.value = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false
-      })
+      }).catch(err => {
+        // 用户取消屏幕共享时不报错
+        if (err.name !== 'NotAllowedError') {
+          throw err;
+        }
+        return null;
+      });
       
+      if (!screenStream.value) return;
       const screenTrack = screenStream.value.getVideoTracks()[0]
       
       // 替换视频轨道
