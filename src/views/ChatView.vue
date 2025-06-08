@@ -1734,15 +1734,18 @@ z-index: -1;
 }
 
 .video-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: center;
-  gap: 15px;
-  flex-wrap: wrap;
+  gap: 25px;
 }
 
 .video-btn {
-  width: 50px;
-  height: 50px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -1763,7 +1766,6 @@ z-index: -1;
 }
 
 .video-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
   transform: scale(1.1);
 }
 .video-status {
@@ -1789,6 +1791,7 @@ z-index: -1;
   width: 24px;
   height: 24px;
 }
+
 /* 屏幕共享状态提示 */
 .screen-sharing-indicator {
   position: absolute;
