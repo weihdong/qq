@@ -163,7 +163,7 @@
           </button>
           <!-- 新增投屏按钮 -->
           <button class="video-btn screen-share" @click="toggleScreenShare">
-            <img :src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
+            <img src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
           </button>
         </div>
       </div>
