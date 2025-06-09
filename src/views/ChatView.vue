@@ -38,6 +38,18 @@
           <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
           <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
           </div>
+          <button @click="createGroupChat">创建群聊</button>
+    
+          <!-- 输入框让用户输入群聊号 -->
+          <div>
+            <input 
+              v-model="groupNumber" 
+              type="text" 
+              placeholder="请输入群聊号" 
+              class="modal-input" 
+            />
+            <button @click="joinGroupChat">加入群聊</button>
+          </div>
       </div>
       </div>
 
@@ -230,6 +242,52 @@ const isFullscreen = ref(false);
 const aspectRatio = ref('16:9');
 const showAspectRatio = ref(false);
 const fullscreenContainer = ref(null);
+
+
+// 群聊相关
+const groupNumber = ref('')
+
+// 创建群聊
+const createGroupChat = async () => {
+  try {
+    const response = await axios.post('/api/groups/create', {
+      userId: store.state.userId
+    })
+    const newGroupNumber = response.data.groupNumber
+    alert(`群聊创建成功！群号是：${newGroupNumber}`)
+    // 创建成功后自动加入群聊
+    joinGroup(newGroupNumber)
+  } catch (error) {
+    console.error(error)
+    alert('创建群聊失败')
+  }
+}
+
+// 加入群聊
+const joinGroupChat = async () => {
+  if (!groupNumber.value) {
+    alert('请输入群聊号')
+    return
+  }
+
+  try {
+    await axios.post('/api/groups/join', {
+      userId: store.state.userId,
+      groupNumber: groupNumber.value
+    })
+    alert('加入群聊成功')
+    // 加入群聊后，切换聊天界面
+    joinGroup(groupNumber.value)
+  } catch (error) {
+    console.error(error)
+    alert('加入群聊失败')
+  }
+}
+
+// 加入群聊后的逻辑处理
+const joinGroup = (groupNumber) => {
+  store.commit('setCurrentGroup', groupNumber) // 假设你使用 Vuex 来管理当前群聊状态
+}
 
 // 真正的全屏切换功能
 const toggleFullscreen = () => {
