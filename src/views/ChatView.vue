@@ -33,8 +33,8 @@
           }" 
           @click="selectGroup(group._id)"
       >
-          {{ group.name[0].toUpperCase() }}
-          <div class="group-indicator">群</div>
+          {{ group.code }}
+          <div class="group-indicator">{{ group.members.length}}</div>
       </div>
     </div>
 
@@ -90,11 +90,14 @@
         :class="['message-container', { 'own-message': msg.from === userId }]"
       >
         <!-- 群聊显示发送者名字 -->
-        <div v-if="msg.chatType === 'group'" class="message-sender">
+        <div class="message-sender" v-if="msg.chatType === 'group'" style="display: inline-block;">
           {{ getSenderName(msg.from) }}
         </div>
-        
-        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+
+        <div class="message-time" style="display: inline-block;">
+          {{ formatTime(msg.timestamp) }}
+        </div>
+
         
         <!-- 消息内容... -->
         <!-- 文本消息 -->
@@ -2167,7 +2170,7 @@ z-index: -1;
 
 .message-sender {
   font-weight: bold;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   color: #ff9800;
 }
 </style>
