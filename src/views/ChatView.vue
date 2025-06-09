@@ -138,7 +138,7 @@
     </div>
         <!-- 新增视频通话模态框 -->
     <div v-if="videoCallModal" class="video-modal">
-      <div class="video-container">
+      <div class="video-container" ref="fullscreenContainer">
         <!-- 本地视频流 -->
         <video ref="localVideo" autoplay muted playsinline @error="handleVideoError('local')"></video>
         
@@ -232,46 +232,33 @@ const showAspectRatio = ref(false);
 const fullscreenContainer = ref(null);
 
 // 真正的全屏切换功能
-const toggleFullscreen = async () => {
-  try {
-    if (!isFullscreen.value) {
-      // 进入全屏模式
-      if (fullscreenContainer.value) {
-        const element = fullscreenContainer.value;
-        
-        if (element.requestFullscreen) {
-          await element.requestFullscreen();
-        } else if (element.webkitRequestFullscreen) { // Safari
-          await element.webkitRequestFullscreen();
-        } else if (element.msRequestFullscreen) { // IE11
-          await element.msRequestFullscreen();
-        }
-        
-        isFullscreen.value = true;
-        
-        // 计算并显示屏幕比例
-        calculateAspectRatio();
-      }
-    } else {
-      // 退出全屏模式
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) { // Safari
-        await document.webkitExitFullscreen();
-      } else if (document.msExitFullscreen) { // IE11
-        await document.msExitFullscreen();
-      }
-      
-      isFullscreen.value = false;
-    }
-  } catch (error) {
-    console.error('全屏操作失败:', error);
-    // 回退到CSS模拟全屏
-    isFullscreen.value = !isFullscreen.value;
-    if (isFullscreen.value) {
-      calculateAspectRatio();
-    }
+const toggleFullscreen = () => {
+  const container = fullscreenContainer.value;
+  
+  if (!isFullscreen.value) {
+    // 进入全屏
+    container.classList.add('fullscreen-active');
+    container.requestFullscreen?.().catch(console.error);
+  } else {
+    // 退出全屏
+    container.classList.remove('fullscreen-active');
+    document.exitFullscreen?.();
   }
+  
+  isFullscreen.value = !isFullscreen.value;
+  
+  // 调整视频布局
+  nextTick(() => {
+    if (remoteVideo.value && localVideo.value) {
+      if (isFullscreen.value) {
+        remoteVideo.value.classList.add('fullscreen-video');
+        localVideo.value.classList.add('fullscreen-local');
+      } else {
+        remoteVideo.value.classList.remove('fullscreen-video');
+        localVideo.value.classList.remove('fullscreen-local');
+      }
+    }
+  });
 };
 
 // 计算对方屏幕比例
@@ -303,20 +290,27 @@ watch(() => remoteVideo.value?.videoWidth, () => {
   }
 });
 
-// 监听全屏变化事件
-const handleFullscreenChange = () => {
-  isFullscreen.value = !!(
-    document.fullscreenElement ||
-    document.webkitFullscreenElement ||
-    document.msFullscreenElement
-  );
-};
-
 onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
-  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-  document.addEventListener('msfullscreenchange', handleFullscreenChange);
 });
+
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+const handleFullscreenChange = () => {
+  if (!document.fullscreenElement) {
+    isFullscreen.value = false;
+    fullscreenContainer.value?.classList.remove('fullscreen-active');
+    
+    if (remoteVideo.value) {
+      remoteVideo.value.classList.remove('fullscreen-video');
+    }
+    if (localVideo.value) {
+      localVideo.value.classList.remove('fullscreen-local');
+    }
+  }
+};
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
