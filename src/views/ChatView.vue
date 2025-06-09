@@ -1776,7 +1776,7 @@ z-index: -1;
   height: 80vh;
   position: relative;
   background: rgb(255, 217, 147);
-  border-radius: 10px;
+  border-radius: 40px;
   overflow: hidden;
 }
 
@@ -1790,16 +1790,16 @@ z-index: -1;
   position: absolute;
   width: 30%;
   height: 25%;
-  top: 20px;
-  right: 20px;
-  border-radius: 8px;
+  top: 4%;
+  right: 4%;
+  border-radius: 35px;
   z-index: 10;
   border: 2px solid white;
 }
 
 .video-controls {
   position: absolute;
-  bottom: 20px;
+  bottom: 4%;
   left: 0;
   right: 0;
   display: flex;
@@ -1812,7 +1812,7 @@ z-index: -1;
 }
 
 .video-btn {
-  width: 10%;
+  width: 16%;
   aspect-ratio: 1;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
@@ -1826,8 +1826,8 @@ z-index: -1;
 }
 
 .video-btn img {
-  width: 30px;
-  height: 30px;
+  width: 100%;
+  height: 100%;
 }
 
 .video-btn.end-call {
