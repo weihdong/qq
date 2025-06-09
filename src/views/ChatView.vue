@@ -24,73 +24,106 @@
           <div class="status-dot"></div>
       </div>
     </div>
-
-
-      <!-- 添加好友弹窗 -->
-      <div v-if="showAddFriendModal" class="modal-mask">
-      <div class="modal">
-          <input 
-          v-model="newFriendName" 
-          placeholder="输入用户名"
-          class="modal-input"
-          >
-          <div class="modal-actions">
-          <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
-          <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
-          </div>
-          <button @click="createGroupChat">创建群聊</button>
-    
-          <!-- 输入框让用户输入群聊号 -->
-          <div>
-            <input 
-              v-model="groupNumber" 
-              type="text" 
-              placeholder="请输入群聊号" 
-              class="modal-input" 
-            />
-            <button @click="joinGroupChat">加入群聊</button>
-          </div>
-      </div>
-      </div>
-
-    <!-- 聊天区域 -->
-  <!-- 聊天区域 -->
-  <div class="chat-area" ref="chatArea">
+    <!-- 群聊列表 -->
     <div 
-      v-for="msg in store.messages"
-      :key="msg._id"
-      :class="['message-container', { 'own-message': msg.from === userId }]"
+        v-for="group in store.groups"
+        :key="group._id"
+        class="avatar-circle group-avatar"
+        :class="{ 
+            active: store.currentChat === group._id
+        }" 
+        @click="selectGroup(group._id)"
     >
-      <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
-      
-      <!-- 文本消息 -->
-      <div v-if="msg.type === 'text'" class="message-bubble">
-        <div class="message-content">{{ msg.content }}</div>
-      </div>
-      
-      <!-- 表情消息 -->
-      <div v-if="msg.type === 'emoji'" class="emoji-message">
-        <img :src="msg.content" class="emoji-img" alt="表情">
-      </div>
-      
-      <!-- 图片消息 -->
-      <div v-if="msg.type === 'image'" class="image-message">
-        <img :src="msg.fileUrl" class="image-preview" @click="openImage(msg.fileUrl)">
-      </div>
-      
-      <!-- 语音消息 -->
-      <div v-if="msg.type === 'audio'" class="audio-message">
-        <audio controls :src="msg.fileUrl" class="audio-player"></audio>
-        <div class="audio-duration">{{ formatDuration(msg.content) }}</div>
+        {{ group.name[0].toUpperCase() }}
+        <div class="group-indicator">群</div>
+    </div>
+
+
+    <!-- 添加好友弹窗 -->
+    <div v-if="showAddFriendModal" class="modal-mask">
+      <div class="modal">
+          <div class="modal-tabs">
+            <button :class="['tab-btn', { active: activeTab === 'friend' }]" @click="activeTab = 'friend'">好友</button>
+            <button :class="['tab-btn', { active: activeTab === 'group' }]" @click="activeTab = 'group'">群聊</button>
+          </div>
+          
+          <!-- 添加好友 -->
+          <div v-if="activeTab === 'friend'">
+            <input 
+              v-model="newFriendName" 
+              placeholder="输入用户名"
+              class="modal-input"
+            >
+            <div class="modal-actions">
+              <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
+              <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
+            </div>
+          </div>
+          
+          <!-- 群聊功能 -->
+          <div v-if="activeTab === 'group'">
+            <button class="modal-btn create-group-btn" @click="createGroup">创建群聊</button>
+            <div class="group-join">
+              <input 
+                v-model="groupCodeToJoin" 
+                placeholder="输入群号"
+                class="modal-input"
+              >
+              <button class="modal-btn join-group-btn" @click="joinGroup">加入群聊</button>
+            </div>
+            <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
+          </div>
       </div>
     </div>
-  </div>
+
+    <!-- 聊天区域 -->
+    <div class="chat-area" ref="chatArea">
+      <!-- 群聊标题 -->
+      <div v-if="currentGroup" class="group-title">
+        <h3>{{ currentGroup.name }}</h3>
+        <p>群号: {{ currentGroup.code }}</p>
+        <p>成员: {{ currentGroup.members.length }}人</p>
+      </div>
+      
+      <div 
+        v-for="msg in store.messages"
+        :key="msg._id"
+        :class="['message-container', { 'own-message': msg.from === userId }]"
+      >
+        <!-- 群聊显示发送者名字 -->
+        <div v-if="msg.chatType === 'group'" class="message-sender">
+          {{ getSenderName(msg.from) }}
+        </div>
+        
+        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+        
+        <!-- 消息内容... -->
+        <!-- 文本消息 -->
+        <div v-if="msg.type === 'text'" class="message-bubble">
+          <div class="message-content">{{ msg.content }}</div>
+        </div>
+        
+        <!-- 表情消息 -->
+        <div v-if="msg.type === 'emoji'" class="emoji-message">
+          <img :src="msg.content" class="emoji-img" alt="表情">
+        </div>
+        
+        <!-- 图片消息 -->
+        <div v-if="msg.type === 'image'" class="image-message">
+          <img :src="msg.fileUrl" class="image-preview" @click="openImage(msg.fileUrl)">
+        </div>
+        
+        <!-- 语音消息 -->
+        <div v-if="msg.type === 'audio'" class="audio-message">
+          <audio controls :src="msg.fileUrl" class="audio-player"></audio>
+          <div class="audio-duration">{{ formatDuration(msg.content) }}</div>
+        </div>
+      </div>
+    </div>
 
 
     <!-- 底栏修改 -->
     <div class="footer">
-
-      
       <!-- 消息输入框 -->
       <input
         v-model="newMessage"
@@ -148,7 +181,8 @@
         <img :src="emoji.url" class="emoji-option">
       </div>
     </div>
-        <!-- 新增视频通话模态框 -->
+    
+    <!-- 新增视频通话模态框 -->
     <div v-if="videoCallModal" class="video-modal">
       <div class="video-container" ref="fullscreenContainer">
         <!-- 本地视频流 -->
@@ -192,6 +226,8 @@
         连接状态: {{ connectionState }}
       </div>
     </div>
+    
+    
     <!-- 图片预览模态框 -->
     <div v-if="previewImage" class="image-preview-modal" @click="previewImage = null">
       <img :src="previewImage" class="full-image">
@@ -219,7 +255,11 @@ const store = useChatStore()
 const newMessage = ref('')
 const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
+// 新增状态变量
 const showAddFriendModal = ref(false)
+const activeTab = ref('friend') // 'friend' 或 'group'
+const groupCodeToJoin = ref('')
+
 const newFriendName = ref('')
 // 新增视频通话相关变量
 const videoCallModal = ref(false)
@@ -242,52 +282,83 @@ const isFullscreen = ref(false);
 const aspectRatio = ref('16:9');
 const showAspectRatio = ref(false);
 const fullscreenContainer = ref(null);
-
-
-// 群聊相关
-const groupNumber = ref('')
-
 // 创建群聊
-const createGroupChat = async () => {
+const createGroup = async () => {
   try {
-    const response = await axios.post('/api/groups/create', {
-      userId: store.state.userId
+    const response = await axios.post(`${getBaseURL()}/api/groups`, {
+      userId,
+      groupName: `群聊${Math.floor(Math.random() * 1000)}`
     })
-    const newGroupNumber = response.data.groupNumber
-    alert(`群聊创建成功！群号是：${newGroupNumber}`)
-    // 创建成功后自动加入群聊
-    joinGroup(newGroupNumber)
+    
+    if (response.data.group) {
+      store.groups.push(response.data.group)
+      toggleAddFriend()
+      alert(`群聊创建成功! 群号: ${response.data.group.code}`)
+    }
   } catch (error) {
-    console.error(error)
-    alert('创建群聊失败')
+    console.error('创建群聊失败:', error)
+    alert('创建群聊失败: ' + (error.response?.data?.error || error.message))
   }
 }
 
 // 加入群聊
-const joinGroupChat = async () => {
-  if (!groupNumber.value) {
-    alert('请输入群聊号')
+const joinGroup = async () => {
+  if (!groupCodeToJoin.value.trim()) {
+    alert('请输入群号')
     return
   }
-
+  
   try {
-    await axios.post('/api/groups/join', {
-      userId: store.state.userId,
-      groupNumber: groupNumber.value
+    const response = await axios.post(`${getBaseURL()}/api/groups/join`, {
+      userId,
+      groupCode: groupCodeToJoin.value.trim()
     })
-    alert('加入群聊成功')
-    // 加入群聊后，切换聊天界面
-    joinGroup(groupNumber.value)
+    
+    if (response.data.group) {
+      store.groups.push(response.data.group)
+      toggleAddFriend()
+      alert('成功加入群聊!')
+    }
   } catch (error) {
-    console.error(error)
-    alert('加入群聊失败')
+    console.error('加入群聊失败:', error)
+    alert('加入群聊失败: ' + (error.response?.data?.error || error.message))
   }
 }
 
-// 加入群聊后的逻辑处理
-const joinGroup = (groupNumber) => {
-  store.commit('setCurrentGroup', groupNumber) // 假设你使用 Vuex 来管理当前群聊状态
+// 选择群聊
+const selectGroup = async (groupId) => {
+  // 清除当前消息
+  store.clearMessages()
+  
+  // 设置当前聊天
+  store.currentChat = groupId
+  store.currentChatType = 'group'
+  
+  // 加载群聊消息
+  await store.loadGroupMessages(groupId)
 }
+
+// 获取发送者名称
+const getSenderName = (senderId) => {
+  if (senderId === userId) return '我'
+  
+  // 从好友中查找
+  const friend = store.friends.find(f => f._id === senderId)
+  if (friend) return friend.username
+  
+  // 从群成员中查找
+  if (currentGroup.value) {
+    const member = currentGroup.value.members.find(m => m.userId === senderId)
+    if (member) return member.username
+  }
+  
+  return '未知用户'
+}
+
+// 计算当前群聊
+const currentGroup = computed(() => {
+  return store.groups.find(g => g._id === store.currentChat)
+})
 
 // 真正的全屏切换功能
 const toggleFullscreen = () => {
@@ -1060,6 +1131,26 @@ const getWsURL = () => {
 const connectWebSocket = () => {
   const ws = new WebSocket(getWsURL())
   let heartbeatInterval
+  // 在WebSocket连接中处理群聊消息
+  const handleGroupMessage = async (message) => {
+    // 如果消息属于当前活跃的群聊
+    if (store.currentChat === message.to && store.currentChatType === 'group') {
+      const newMessage = {
+        ...message.data,
+        _id: message.data._id,
+        from: message.data.from,
+        to: message.data.to,
+        content: message.data.content,
+        type: message.data.type,
+        fileUrl: message.data.fileUrl,
+        timestamp: new Date(message.data.timestamp),
+        chatType: 'group'
+      }
+      
+      store.messages.push(newMessage)
+    }
+  }
+
 
   const sendConnect = () => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -1096,6 +1187,11 @@ const connectWebSocket = () => {
       if (message.type === 'end-call') {
         console.log('收到结束通话信号')
         endVideoCall()
+        return
+      }
+          // 群聊消息处理
+      if (message.type === 'group-message') {
+        handleGroupMessage(message)
         return
       }
       // 统一处理所有消息
@@ -1244,7 +1340,7 @@ const selectFriend = async (friendId) => {
 // 发送消息（增强版）
 const sendMessage = (type, content = null, fileUrl = null) => {
   if (!store.currentChat) {
-    alert('请先选择好友')
+    alert('请先选择聊天对象')
     return
   }
   
@@ -1264,7 +1360,8 @@ const sendMessage = (type, content = null, fileUrl = null) => {
       to: store.currentChat,
       content: type === 'text' ? newMessage.value.trim() : content,
       fileUrl,
-      timestamp: getCurrentTime()
+      timestamp: getCurrentTime(),
+      chatType: store.currentChatType // 'private' 或 'group'
     }
     
     store.ws.send(JSON.stringify(message))
@@ -1307,6 +1404,13 @@ watch(() => store.messages, async () => {
 // 初始化加载
 onMounted(async () => {
   try {
+    // 加载群聊列表
+    const groupsRes = await axios.get(`${getBaseURL()}/api/groups`, {
+      params: { userId }
+    })
+    store.groups = groupsRes.data.groups
+
+  
     // 加载好友列表
     const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
       params: { userId }
@@ -1979,5 +2083,72 @@ z-index: -1;
   z-index: 20;
   opacity: 0.8;
   transition: opacity 0.5s;
+}
+
+/* 新增群聊样式 */
+.group-avatar {
+  position: relative;
+  background-color: #ffcc80; /* 群聊特殊背景色 */
+}
+
+.group-indicator {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  background: #ff9800;
+  color: white;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 10px;
+  border: 1px solid white;
+}
+
+.modal-tabs {
+  display: flex;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  border-bottom-color: orange;
+  font-weight: bold;
+}
+
+.group-join {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.group-join input {
+  flex: 1;
+}
+
+.create-group-btn, .join-group-btn {
+  background: #ff9800;
+  color: white;
+}
+
+.group-title {
+  text-align: center;
+  padding: 10px;
+  background: rgba(255, 152, 0, 0.1);
+  margin-bottom: 15px;
+  border-radius: 10px;
+}
+
+.message-sender {
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #ff9800;
 }
 </style>
