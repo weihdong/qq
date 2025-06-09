@@ -136,38 +136,15 @@
         <img :src="emoji.url" class="emoji-option">
       </div>
     </div>
-
-    <!-- 视频通话模态框 -->
+        <!-- 新增视频通话模态框 -->
     <div v-if="videoCallModal" class="video-modal">
-      <div class="video-container" ref="videoContainer">
+      <div class="video-container" ref="fullscreenContainer">
         <!-- 本地视频流 -->
-        <video 
-          ref="localVideo" 
-          autoplay 
-          muted 
-          playsinline 
-          @error="handleVideoError('local')"
-          class="local-video"
-          :style="localVideoStyle"
-        ></video>
+        <video ref="localVideo" autoplay muted playsinline @error="handleVideoError('local')"></video>
         
         <!-- 远程视频流 -->
-        <div 
-          class="remote-video-container"
-          @wheel.prevent="handleVideoZoom"
-          @mousedown="startDrag"
-          @touchstart="startDrag"
-        >
-          <video 
-            ref="remoteVideo" 
-            autoplay 
-            playsinline 
-            @error="handleVideoError('remote')"
-            :style="remoteVideoStyle"
-            @loadedmetadata="calculateAspectRatio"
-          ></video>
-        </div>
-
+        <video ref="remoteVideo" autoplay playsinline @error="handleVideoError('remote')"></video>
+        
         <!-- 控制按钮 -->
         <!-- 新增两个按钮的模板部分 -->
         <div class="video-controls">
@@ -192,14 +169,6 @@
           <button class="video-btn fullscreen-btn" @click="toggleFullscreen">
             <img :src="isFullscreen ? '/png/fullscreen-exit.png' : '/png/fullscreen.png'" alt="全屏">
           </button>
-                    <!-- 新增：重置缩放按钮 -->
-          <button class="video-btn reset-btn" @click="resetZoom">
-            <img src="./png/reset.png" alt="重置">
-          </button>
-        </div>
-                <!-- 缩放指示器 -->
-        <div v-if="showZoomLevel" class="zoom-indicator">
-          缩放: {{ zoomLevel }}x
         </div>
       </div>
           <!-- 新增：屏幕比例指示器 -->
@@ -252,13 +221,7 @@ const micEnabled = ref(true)
 const facingMode = ref('user') // 'user' 前置摄像头, 'environment' 后置摄像头
 const isScreenSharing = ref(false)
 const screenStream = ref(null)
-// 新增视频缩放和移动相关变量
-const zoomLevel = ref(1)
-const videoOffset = ref({ x: 0, y: 0 })
-const isDragging = ref(false)
-const dragStart = ref({ x: 0, y: 0 })
-const showZoomLevel = ref(false)
-const videoContainer = ref(null)
+
 
 
 
@@ -298,27 +261,7 @@ const toggleFullscreen = () => {
   });
 };
 
-// 计算远程视频样式
-const remoteVideoStyle = computed(() => {
-  return {
-    transform: `scale(${zoomLevel.value}) translate(${videoOffset.value.x}px, ${videoOffset.value.y}px)`,
-    transformOrigin: 'center center'
-  }
-})
-
-// 计算本地视频样式
-const localVideoStyle = computed(() => {
-  // 根据缩放级别调整本地视频位置
-  const topOffset = zoomLevel.value > 1 ? 20 : 20
-  const rightOffset = zoomLevel.value > 1 ? 20 : 20
-  return {
-    top: `${topOffset}px`,
-    right: `${rightOffset}px`,
-    zIndex: 10
-  }
-})
-
-// 视频加载元数据时计算比例
+// 计算对方屏幕比例
 const calculateAspectRatio = () => {
   if (!remoteVideo.value || !remoteVideo.value.videoWidth) return;
   
@@ -338,89 +281,7 @@ const calculateAspectRatio = () => {
       showAspectRatio.value = false;
     }, 3000);
   }
-}
-
-// 处理视频缩放
-const handleVideoZoom = (event) => {
-  // 计算缩放增量（向上滚动放大，向下滚动缩小）
-  const delta = event.deltaY > 0 ? -0.1 : 0.1;
-  const newZoom = Math.max(0.5, Math.min(3, zoomLevel.value + delta));
-  
-  zoomLevel.value = parseFloat(newZoom.toFixed(1));
-  
-  // 显示缩放级别提示
-  showZoomLevel.value = true;
-  setTimeout(() => {
-    showZoomLevel.value = false;
-  }, 1500);
-}
-
-// 开始拖拽
-const startDrag = (event) => {
-  if (zoomLevel.value <= 1) return;
-  
-  isDragging.value = true;
-  const clientX = event.clientX || event.touches[0].clientX;
-  const clientY = event.clientY || event.touches[0].clientY;
-  
-  dragStart.value = {
-    x: clientX,
-    y: clientY,
-    offsetX: videoOffset.value.x,
-    offsetY: videoOffset.value.y
-  };
-  
-  // 添加事件监听
-  document.addEventListener('mousemove', dragMove);
-  document.addEventListener('touchmove', dragMove, { passive: false });
-  document.addEventListener('mouseup', endDrag);
-  document.addEventListener('touchend', endDrag);
-}
-
-// 拖拽移动
-const dragMove = (event) => {
-  if (!isDragging.value) return;
-  
-  event.preventDefault();
-  
-  const clientX = event.clientX || (event.touches[0] ? event.touches[0].clientX : 0);
-  const clientY = event.clientY || (event.touches[0] ? event.touches[0].clientY : 0);
-  
-  const deltaX = clientX - dragStart.value.x;
-  const deltaY = clientY - dragStart.value.y;
-  
-  // 计算最大可移动范围（基于缩放级别）
-  const maxOffset = (zoomLevel.value - 1) * 100;
-  
-  videoOffset.value = {
-    x: Math.max(-maxOffset, Math.min(maxOffset, dragStart.value.offsetX + deltaX)),
-    y: Math.max(-maxOffset, Math.min(maxOffset, dragStart.value.offsetY + deltaY))
-  };
-}
-
-// 结束拖拽
-const endDrag = () => {
-  isDragging.value = false;
-  
-  // 移除事件监听
-  document.removeEventListener('mousemove', dragMove);
-  document.removeEventListener('touchmove', dragMove);
-  document.removeEventListener('mouseup', endDrag);
-  document.removeEventListener('touchend', endDrag);
-}
-
-// 重置缩放和位置
-const resetZoom = () => {
-  zoomLevel.value = 1;
-  videoOffset.value = { x: 0, y: 0 };
-  
-  // 显示重置提示
-  showZoomLevel.value = true;
-  setTimeout(() => {
-    showZoomLevel.value = false;
-  }, 1500);
-}
-
+};
 
 // 监听远程视频元数据加载
 watch(() => remoteVideo.value?.videoWidth, () => {
@@ -750,7 +611,6 @@ const handleVideoSignal = async (signal) => {
 // 修改 endVideoCall 方法（彻底清理资源）
 const endVideoCall = () => {
   console.log('结束视频通话');
-  resetZoom();
   
   // 防止重复调用
   if (!peerConnection.value && !localStream.value) return;
@@ -1915,7 +1775,7 @@ z-index: -1;
   max-width: 900px;
   height: 80vh;
   position: relative;
-  background: rgb(241, 203, 133);
+  background: rgb(255, 217, 147);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -1944,13 +1804,15 @@ z-index: -1;
   right: 0;
   display: flex;
   justify-content: center;
+  margin-left: 5%;
+  margin-right: 5%;
   gap: 15px;
   flex-wrap: wrap;
   z-index: 30;
 }
 
 .video-btn {
-  width: 12%;
+  width: 10%;
   aspect-ratio: 1;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
@@ -1958,8 +1820,6 @@ z-index: -1;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 4.5%;
-  margin-left: 4.5%;
   cursor: pointer;
   transition: all 0.3s;
   z-index: 1002;
@@ -2036,9 +1896,9 @@ z-index: -1;
 /* 全屏模式下的本地视频小窗口 */
 .fullscreen-local {
   position: absolute;
-  top: 2%;
-  right: 2%;
-  width: 10%;
+  top: 20px;
+  right: 20px;
+  width: 20%;
   max-width: 200px;
   z-index: 10;
   border: 2px solid white;
@@ -2061,49 +1921,4 @@ z-index: -1;
   opacity: 0.8;
   transition: opacity 0.5s;
 }
-
-/* 远程视频容器 */
-.remote-video-container {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: move;
-}
-
-/* 远程视频样式 */
-.remote-video-container video {
-  max-width: 100%;
-  max-height: 100%;
-  transition: transform 0.1s ease-out;
-}
-
-/* 本地视频样式 */
-.local-video {
-  position: absolute;
-  width: 20%;
-  max-width: 200px;
-  border: 2px solid white;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-  object-fit: cover;
-}
-
-/* 缩放指示器 */
-.zoom-indicator {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 16px;
-  z-index: 20;
-  transition: opacity 0.3s;
-}
-
 </style>
