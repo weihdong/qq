@@ -1814,6 +1814,7 @@ z-index: -1;
 .video-btn {
   width: 16%;
   aspect-ratio: 1;
+  max-width: 80px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
   border: none;
