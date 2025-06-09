@@ -1776,7 +1776,7 @@ z-index: -1;
   height: 80vh;
   position: relative;
   background: rgb(255, 217, 147);
-  border-radius: 40px;
+  border-radius: 48px;
   overflow: hidden;
 }
 
@@ -1792,7 +1792,7 @@ z-index: -1;
   height: 25%;
   top: 4%;
   right: 4%;
-  border-radius: 35px;
+  border-radius: 40px;
   z-index: 10;
   border: 2px solid white;
 }
@@ -1814,7 +1814,7 @@ z-index: -1;
 .video-btn {
   width: 16%;
   aspect-ratio: 1;
-  max-width: 80px;
+  max-width: 48px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
   border: none;
@@ -1897,9 +1897,9 @@ z-index: -1;
 /* 全屏模式下的本地视频小窗口 */
 .fullscreen-local {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 20%;
+  top: 4px;
+  right: 4px;
+  width: 12%;
   max-width: 200px;
   z-index: 10;
   border: 2px solid white;
