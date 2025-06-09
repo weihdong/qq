@@ -165,7 +165,15 @@
           <button class="video-btn screen-share" @click="toggleScreenShare">
             <img :src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
           </button>
+                <!-- 修改全屏按钮 -->
+          <button class="video-btn fullscreen-btn" @click="toggleFullscreen">
+            <img :src="isFullscreen ? '/png/fullscreen-exit.png' : '/png/fullscreen.png'" alt="全屏">
+          </button>
         </div>
+      </div>
+          <!-- 新增：屏幕比例指示器 -->
+      <div v-if="showAspectRatio" class="aspect-ratio-indicator">
+        屏幕比例: {{ aspectRatio }}
       </div>
       <!-- 在视频模态框中添加状态提示 -->
       <div class="video-status" v-if="connectionState">
@@ -213,6 +221,113 @@ const micEnabled = ref(true)
 const facingMode = ref('user') // 'user' 前置摄像头, 'environment' 后置摄像头
 const isScreenSharing = ref(false)
 const screenStream = ref(null)
+
+
+
+
+// 新增状态变量
+const isFullscreen = ref(false);
+const aspectRatio = ref('16:9');
+const showAspectRatio = ref(false);
+const fullscreenContainer = ref(null);
+
+// 真正的全屏切换功能
+const toggleFullscreen = async () => {
+  try {
+    if (!isFullscreen.value) {
+      // 进入全屏模式
+      if (fullscreenContainer.value) {
+        const element = fullscreenContainer.value;
+        
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+        } else if (element.webkitRequestFullscreen) { // Safari
+          await element.webkitRequestFullscreen();
+        } else if (element.msRequestFullscreen) { // IE11
+          await element.msRequestFullscreen();
+        }
+        
+        isFullscreen.value = true;
+        
+        // 计算并显示屏幕比例
+        calculateAspectRatio();
+      }
+    } else {
+      // 退出全屏模式
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) { // Safari
+        await document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) { // IE11
+        await document.msExitFullscreen();
+      }
+      
+      isFullscreen.value = false;
+    }
+  } catch (error) {
+    console.error('全屏操作失败:', error);
+    // 回退到CSS模拟全屏
+    isFullscreen.value = !isFullscreen.value;
+    if (isFullscreen.value) {
+      calculateAspectRatio();
+    }
+  }
+};
+
+// 计算对方屏幕比例
+const calculateAspectRatio = () => {
+  if (!remoteVideo.value || !remoteVideo.value.videoWidth) return;
+  
+  const width = remoteVideo.value.videoWidth;
+  const height = remoteVideo.value.videoHeight;
+  
+  if (width > 0 && height > 0) {
+    // 计算最大公约数
+    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+    const divisor = gcd(width, height);
+    
+    aspectRatio.value = `${width / divisor}:${height / divisor}`;
+    showAspectRatio.value = true;
+    
+    // 3秒后隐藏比例指示器
+    setTimeout(() => {
+      showAspectRatio.value = false;
+    }, 3000);
+  }
+};
+
+// 监听远程视频元数据加载
+watch(() => remoteVideo.value?.videoWidth, () => {
+  if (isFullscreen.value && remoteVideo.value && remoteVideo.value.readyState > 0) {
+    calculateAspectRatio();
+  }
+});
+
+// 监听全屏变化事件
+const handleFullscreenChange = () => {
+  isFullscreen.value = !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement
+  );
+};
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('msfullscreenchange', handleFullscreenChange);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+});
+
+
+
+
+
 
 // 添加连接状态响应式变量
 const connectionState = ref('');
@@ -1697,14 +1812,14 @@ z-index: -1;
   justify-content: center;
   gap: 15px;
   flex-wrap: wrap;
-  z-index: 1001;
+  z-index: 30;
 }
 
 .video-btn {
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
   border: none;
   display: flex;
   align-items: center;
@@ -1756,5 +1871,58 @@ z-index: -1;
 .footer .video-btn img {
   width: 24px;
   height: 24px;
+}
+
+
+/* 全屏模式下的容器 */
+.video-container.fullscreen-active {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 3000;
+  background: #000;
+  border-radius: 0;
+}
+
+/* 全屏模式下的远程视频 */
+.fullscreen-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 保持宽高比 */
+  z-index: 1;
+}
+
+/* 全屏模式下的本地视频小窗口 */
+.fullscreen-local {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 20%;
+  max-width: 200px;
+  z-index: 10;
+  border: 2px solid white;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+/* 屏幕比例指示器 */
+.aspect-ratio-indicator {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 16px;
+  z-index: 20;
+  opacity: 0.8;
+  transition: opacity 0.5s;
 }
 </style>
