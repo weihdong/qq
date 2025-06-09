@@ -165,6 +165,7 @@
       <button 
         class="videobtn"
         @click="startVideoCall"
+        :disabled="!canStartVideoCall"
       >
         <img src="./png/video.png" alt="视频通话">
       </button>
@@ -188,11 +189,25 @@
     <div v-if="videoCallModal" class="video-modal">
       <div class="video-container" ref="fullscreenContainer">
         <!-- 本地视频流 -->
-        <video ref="localVideo" autoplay muted playsinline @error="handleVideoError('local')"></video>
+        <video ref="localVideo" autoplay muted playsinline></video>
         
-        <!-- 远程视频流 -->
-        <video ref="remoteVideo" autoplay playsinline @error="handleVideoError('remote')"></video>
-        
+        <!-- 远程视频流网格 -->
+        <div class="video-grid">
+          <div 
+            v-for="(participant, index) in videoParticipants" 
+            :key="participant.id"
+            class="video-item"
+          >
+            <video 
+              :ref="`remoteVideo_${participant.id}`"
+              autoplay
+              playsinline
+            ></video>
+            <div class="participant-info">
+              {{ participant.username }}
+            </div>
+          </div>
+        </div>
         <!-- 控制按钮 -->
         <!-- 新增两个按钮的模板部分 -->
         <div class="video-controls">
@@ -284,6 +299,9 @@ const isFullscreen = ref(false);
 const aspectRatio = ref('16:9');
 const showAspectRatio = ref(false);
 const fullscreenContainer = ref(null);
+
+// 新增状态变量
+const videoParticipants = ref([]) // 视频通话参与者列表
 // 创建群聊
 const createGroup = async () => {
   try {
@@ -460,6 +478,12 @@ onBeforeUnmount(() => {
   endVideoCall()
 })
 
+const canStartVideoCall = computed(() => {
+  // 群聊或私聊都可以发起视频通话
+  return store.currentChat && 
+    (store.currentChatType === 'private' || store.currentChatType === 'group')
+})
+
 const startVideoCall = async () => {
   if (!store.currentChat) {
     alert('请先选择好友');
@@ -467,68 +491,80 @@ const startVideoCall = async () => {
   }
   
   try {
-    videoCallModal.value = true;
-    await nextTick();
+    videoCallModal.value = true
+    videoParticipants.value = []
     
-    // 1. 获取媒体流
+    // 获取当前用户信息
+    const currentUser = {
+      id: userId,
+      username: localStorage.getItem('username') || '我'
+    }
+    
+    // 添加当前用户到参与者列表
+    videoParticipants.value.push({
+      ...currentUser,
+      stream: null,
+      connection: null
+    })
+    
+    // 创建本地流
     const constraints = { 
       video: true,
       audio: true
-    };
+    }
     
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints);
-    
-    // 2. 立即禁用所有轨道（核心修改）
-    localStream.value.getTracks().forEach(track => {
-      track.enabled = false; // 禁用摄像头和麦克风
-    });
-    
-    // 3. 更新状态变量
-    cameraEnabled.value = false;
-    micEnabled.value = false;
-    
-    // 4. 继续后续流程
-    createPeerConnection();
-    
-    // 添加轨道（此时轨道已被禁用）
-    localStream.value.getTracks().forEach(track => {
-      peerConnection.value.addTrack(track, localStream.value);
-    });
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
     
     // 显示本地视频
     if (localVideo.value) {
-      localVideo.value.srcObject = localStream.value;
-      localVideo.value.muted = true;
-      localVideo.value.play().catch(e => {
-        console.error('本地视频播放失败:', e);
-        document.body.click();
-        setTimeout(() => localVideo.value.play(), 500);
-      });
+      localVideo.value.srcObject = localStream.value
+      localVideo.value.muted = true
     }
     
-    // 创建offer
-    const offer = await peerConnection.value.createOffer({
-      offerToReceiveVideo: true,
-      offerToReceiveAudio: true
-    });
-    
-    await peerConnection.value.setLocalDescription(offer);
-    
-    // 发送offer
-    sendVideoSignal({
-      signalType: 'offer',
-      sdp: offer.sdp,
-      to: store.currentChat
-    });
+    // 根据聊天类型处理
+    if (store.currentChatType === 'private') {
+      // 私聊视频通话
+      createPeerConnection(store.currentChat)
+    } else {
+      // 群聊视频通话
+      await startGroupVideoCall()
+    }
   } catch (error) {
-    console.error('启动视频通话失败:', error);
-    alert(`视频通话错误: ${error.message}`);
-    endVideoCall();
+    console.error('启动视频通话失败:', error)
+    alert(`视频通话错误: ${error.message}`)
+    endVideoCall()
   }
-};
+}
+
+// 新增群聊视频通话方法
+const startGroupVideoCall = async () => {
+  try {
+    // 获取群成员
+    const response = await axios.get(`${getBaseURL()}/api/group-members`, {
+      params: { groupId: store.currentChat }
+    })
+    
+    const members = response.data.members
+      .filter(m => m.userId !== userId) // 排除自己
+      .map(m => ({
+        id: m.userId,
+        username: m.username
+      }))
+    
+    // 为每个成员创建连接
+    for (const member of members) {
+      createPeerConnection(member.id, member.username)
+    }
+    
+    // 发送群视频通话邀请
+    sendGroupVideoInvite(members.map(m => m.id))
+  } catch (error) {
+    console.error('启动群视频通话失败:', error)
+  }
+}
 
 // 修改 createPeerConnection 方法（修复轨道处理）
-const createPeerConnection = () => {
+const createPeerConnection = (targetId, username = '') => {
   const configuration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -547,33 +583,40 @@ const createPeerConnection = () => {
   
   peerConnection.value = new RTCPeerConnection(configuration);
   
-  // 修复轨道处理 - 确保正确添加所有轨道
+  // 添加本地轨道
+  if (localStream.value) {
+    localStream.value.getTracks().forEach(track => {
+      peerConnection.value.addTrack(track, localStream.value);
+    });
+  }
+
+  // 处理远程轨道
   peerConnection.value.ontrack = (event) => {
     console.log('收到远程轨道:', event.streams.length);
-    
-    // 处理多流情况
-    if (!remoteVideo.value.srcObject && event.streams.length > 0) {
-      remoteVideo.value.srcObject = event.streams[0];
-      
-      // 添加播放错误处理
-      remoteVideo.value.onerror = (e) => {
-        console.error('远程视频播放错误:', e);
-        // 尝试重新设置源
-        setTimeout(() => {
-          remoteVideo.value.srcObject = event.streams[0];
-          remoteVideo.value.play().catch(console.error);
-        }, 500);
-      };
-      
-      remoteVideo.value.onloadedmetadata = () => {
-        console.log('远程视频元数据加载完成');
-        remoteVideo.value.play().catch(e => {
-          console.error('播放失败:', e);
-          // 尝试强制播放
-          document.body.click(); // 解决浏览器自动播放策略
-          setTimeout(() => remoteVideo.value.play(), 1000);
+
+    if (event.streams && event.streams[0]) {
+      const stream = event.streams[0];
+
+      // 查找或添加参与者
+      const existingIndex = videoParticipants.value.findIndex(p => p.id === targetId);
+      if (existingIndex === -1) {
+        videoParticipants.value.push({
+          id: targetId,
+          username: username || `用户 ${targetId.slice(0, 4)}`,
+          stream: stream
         });
-      };
+      } else {
+        videoParticipants.value[existingIndex].stream = stream;
+      }
+
+      // 更新视频元素
+      nextTick(() => {
+        const videoElement = document.querySelector(`[ref="remoteVideo_${targetId}"]`);
+        if (videoElement) {
+          videoElement.srcObject = stream;
+          videoElement.play().catch(console.error);
+        }
+      });
     }
   };
 
@@ -614,6 +657,28 @@ const createPeerConnection = () => {
     }
   };
 };
+// 新增群视频邀请方法
+const sendGroupVideoInvite = (memberIds) => {
+  if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return
+  
+  const invite = {
+    type: 'video-invite',
+    from: userId,
+    groupId: store.currentChat,
+    members: memberIds
+  }
+  
+  store.ws.send(JSON.stringify(invite))
+}
+// 处理视频邀请
+const handleVideoInvite = (invite) => {
+  if (invite.type === 'video-invite') {
+    const confirmJoin = confirm(`您收到来自 ${invite.from} 的群视频通话邀请，是否加入？`)
+    if (confirmJoin) {
+      startVideoCall()
+    }
+  }
+}
 
 // 修改 sendVideoSignal 方法（统一信号格式）
 const sendVideoSignal = (data) => {
@@ -1180,8 +1245,8 @@ const connectWebSocket = () => {
     try {
       const message = JSON.parse(event.data)
       // 视频信号处理
-      if (message.type === 'video-signal') {
-        handleVideoSignal(message)
+      if (message.type === 'video-invite') {
+        handleVideoInvite(message)
         return
       }
             // 结束通话处理
@@ -2172,5 +2237,41 @@ z-index: -1;
   font-weight: bold;
   margin-bottom: 4px;
   color: #ff9800;
+}
+
+
+/* 新增视频网格样式 */
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+}
+
+.video-item {
+  position: relative;
+  background: #333;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 16/9;
+}
+
+.video-item video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.participant-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 5px;
+  font-size: 12px;
 }
 </style>
