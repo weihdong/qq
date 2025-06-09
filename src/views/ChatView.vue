@@ -165,15 +165,7 @@
           <button class="video-btn screen-share" @click="toggleScreenShare">
             <img :src='isScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
           </button>
-                <!-- 新增全屏按钮 -->
-          <button class="video-btn fullscreen-btn" @click="toggleFullscreen">
-            <img :src="isFullscreen ? '/png/fullscreen-exit.png' : '/png/fullscreen.png'" alt="全屏">
-          </button>
         </div>
-      </div>
-        <!-- 新增视频比例指示器 -->
-      <div class="aspect-ratio-indicator" v-if="showAspectRatio">
-        {{ aspectRatio }}
       </div>
       <!-- 在视频模态框中添加状态提示 -->
       <div class="video-status" v-if="connectionState">
@@ -221,51 +213,6 @@ const micEnabled = ref(true)
 const facingMode = ref('user') // 'user' 前置摄像头, 'environment' 后置摄像头
 const isScreenSharing = ref(false)
 const screenStream = ref(null)
-// 新增状态变量
-const isFullscreen = ref(false);
-const aspectRatio = ref('16:9');
-const showAspectRatio = ref(false);
-
-// 切换全屏功能
-const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value;
-  
-  // 更新视频比例显示
-  if (isFullscreen.value) {
-    setTimeout(() => {
-      calculateAspectRatio();
-      showAspectRatio.value = true;
-      setTimeout(() => {
-        showAspectRatio.value = false;
-      }, 2000);
-    }, 300);
-  }
-};
-
-// 计算并显示视频比例
-const calculateAspectRatio = () => {
-  if (!remoteVideo.value) return;
-  
-  const video = remoteVideo.value;
-  const width = video.videoWidth;
-  const height = video.videoHeight;
-  
-  if (width > 0 && height > 0) {
-    // 计算宽高比
-    const gcd = (a, b) => b ? gcd(b, a % b) : a;
-    const divisor = gcd(width, height);
-    const ratioWidth = width / divisor;
-    const ratioHeight = height / divisor;
-    
-    aspectRatio.value = `${ratioWidth}:${ratioHeight}`;
-  }
-};
-// 监听远程视频元数据加载
-watch(() => remoteVideo.value?.videoWidth, () => {
-  if (remoteVideo.value && remoteVideo.value.readyState > 0) {
-    calculateAspectRatio();
-  }
-});
 
 // 添加连接状态响应式变量
 const connectionState = ref('');
@@ -1732,10 +1679,10 @@ z-index: -1;
 
 .video-container video:first-child {
   position: absolute;
-  width: 25%;
+  width: 30%;
   height: 25%;
-  top: 4%;
-  right: 4%;
+  top: 20px;
+  right: 20px;
   border-radius: 8px;
   z-index: 10;
   border: 2px solid white;
@@ -1748,13 +1695,14 @@ z-index: -1;
   right: 0;
   display: flex;
   justify-content: center;
-  gap: 4%;
+  gap: 15px;
   flex-wrap: wrap;
   z-index: 1001;
 }
 
 .video-btn {
-  width: 12%;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -1808,43 +1756,5 @@ z-index: -1;
 .footer .video-btn img {
   width: 24px;
   height: 24px;
-}
-
-/* 全屏模式样式 */
-.video-modal.fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 3000;
-  background: #000;
-}
-
-.video-modal.fullscreen .video-container {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  border-radius: 0;
-}
-/* 全屏按钮样式 */
-.fullscreen-btn {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* 视频比例指示器 */
-.aspect-ratio-indicator {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 18px;
-  z-index: 20;
-  opacity: 0.8;
-  transition: opacity 0.5s;
 }
 </style>
