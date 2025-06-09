@@ -1783,7 +1783,7 @@ z-index: -1;
 .video-container video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .video-container video:first-child {
@@ -1890,7 +1890,7 @@ z-index: -1;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover; /* 保持宽高比 */
+  object-fit: contain; /* 保持宽高比 */
   z-index: 1;
 }
 
@@ -1900,7 +1900,7 @@ z-index: -1;
   top: 1px;
   right: 1px;
   width: 8%;
-  max-width: 12px;
+  max-width: 36px;
   z-index: 10;
   border: 2px solid white;
   border-radius: 8px;
