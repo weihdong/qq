@@ -1776,7 +1776,7 @@ z-index: -1;
   height: 80vh;
   position: relative;
   background: rgb(255, 217, 147);
-  border-radius: 48px;
+  border-radius: 40px;
   overflow: hidden;
 }
 
@@ -1890,17 +1890,17 @@ z-index: -1;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain; /* 保持宽高比 */
+  object-fit: cover; /* 保持宽高比 */
   z-index: 1;
 }
 
 /* 全屏模式下的本地视频小窗口 */
 .fullscreen-local {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 12%;
-  max-width: 200px;
+  top: 1px;
+  right: 1px;
+  width: 8%;
+  max-width: 12px;
   z-index: 10;
   border: 2px solid white;
   border-radius: 8px;
