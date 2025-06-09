@@ -23,21 +23,20 @@
           <!-- 在线状态指示器 -->
           <div class="status-dot"></div>
       </div>
+          <!-- 群聊列表 -->
+      <div 
+          v-for="group in store.groups"
+          :key="group._id"
+          class="avatar-circle group-avatar"
+          :class="{ 
+              active: store.currentChat === group._id
+          }" 
+          @click="selectGroup(group._id)"
+      >
+          {{ group.name[0].toUpperCase() }}
+          <div class="group-indicator">群</div>
+      </div>
     </div>
-    <!-- 群聊列表 -->
-    <div 
-        v-for="group in store.groups"
-        :key="group._id"
-        class="avatar-circle group-avatar"
-        :class="{ 
-            active: store.currentChat === group._id
-        }" 
-        @click="selectGroup(group._id)"
-    >
-        {{ group.name[0].toUpperCase() }}
-        <div class="group-indicator">群</div>
-    </div>
-
 
     <!-- 添加好友弹窗 -->
     <div v-if="showAddFriendModal" class="modal-mask">
