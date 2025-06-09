@@ -29,7 +29,7 @@
           :key="group._id"
           class="avatar-circle group-avatar"
           :class="{ 
-              active: store.currentChat === group._id
+              active: store.currentChat === group._id && store.currentChatType === 'group'
           }" 
           @click="selectGroup(group._id)"
       >
@@ -330,10 +330,9 @@ const selectGroup = async (groupId) => {
   store.clearMessages()
   
   // 设置当前聊天
-  store.currentChat = groupId
-  store.currentChatType = 'group'
+  store.setCurrentChat(groupId, 'group')
   
-  // 加载群聊消息
+  // 加载群聊消息 - 确保在 store 中定义了 loadGroupMessages
   await store.loadGroupMessages(groupId)
 }
 
@@ -1325,15 +1324,16 @@ try {
 }
 }
 
+// 修改选择好友方法
 const selectFriend = async (friendId) => {
   // 清除当前消息
-  store.clearMessages();
+  store.clearMessages()
   
   // 设置当前聊天
-  store.currentChat = friendId;
+  store.setCurrentChat(friendId, 'private')
   
   // 加载新消息
-  await store.loadMessages();
+  await store.loadMessages()
 }
 
 // 发送消息（增强版）
@@ -1403,26 +1403,23 @@ watch(() => store.messages, async () => {
 // 初始化加载
 onMounted(async () => {
   try {
-    // 加载群聊列表
-    const groupsRes = await axios.get(`${getBaseURL()}/api/groups`, {
-      params: { userId }
-    })
-    store.groups = groupsRes.data.groups
-
-  
     // 加载好友列表
     const friendsRes = await axios.get(`${getBaseURL()}/api/friends`, {
       params: { userId }
     })
     store.friends = friendsRes.data.friends.map(f => ({
       ...f,
-      isOnline: false // 初始状态设为离线
+      isOnline: false
     }))
 
+    // 加载群聊列表
+    const groupsRes = await axios.get(`${getBaseURL()}/api/groups`, {
+      params: { userId }
+    })
+    store.groups = groupsRes.data.groups
+    
     // 建立WebSocket连接
     store.ws = connectWebSocket()
-
-
   } catch (error) {
     console.error('初始化失败:', error)
     alert('初始化失败，请刷新页面重试')

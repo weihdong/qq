@@ -7,8 +7,10 @@ const getBaseURL = () => import.meta.env.VITE_API_BASE_URL
 export const useChatStore = defineStore('chat', () => {
   // 状态
   const currentChat = ref(null)
+  const currentChatType = ref('private')  // 当前聊天类型，默认为私人聊天
   const messages = ref([])
   const friends = ref([])
+  const groups = ref([]) // 添加群组状态
   const socket = ref(null)
   
   // 计算属性
@@ -73,36 +75,36 @@ export const useChatStore = defineStore('chat', () => {
     socket.value.send(JSON.stringify(msg))
   }
 
-// 修改加载消息方法
-const loadMessages = async () => {
-  try {
-    const res = await axios.get(`${getBaseURL()}/api/messages`, {
-      params: {
-        from: localStorage.getItem('userId'),
-        to: currentChat.value
-      }
-    })
-    
-    // 确保消息格式一致
-    messages.value = res.data.map(msg => ({
-      ...msg,
-      _id: msg._id,
-      from: msg.from,
-      to: msg.to,
-      content: msg.content,
-      type: msg.type || 'text',
-      fileUrl: msg.fileUrl,
-      timestamp: new Date(msg.timestamp)
-    }))
-  } catch (error) {
-    console.error('加载消息失败:', error)
+  // 修改加载消息方法
+  const loadMessages = async () => {
+    try {
+      const res = await axios.get(`${getBaseURL()}/api/messages`, {
+        params: {
+          from: localStorage.getItem('userId'),
+          to: currentChat.value
+        }
+      })
+      
+      // 确保消息格式一致
+      messages.value = res.data.map(msg => ({
+        ...msg,
+        _id: msg._id,
+        from: msg.from,
+        to: msg.to,
+        content: msg.content,
+        type: msg.type || 'text',
+        fileUrl: msg.fileUrl,
+        timestamp: new Date(msg.timestamp)
+      }))
+    } catch (error) {
+      console.error('加载消息失败:', error)
+    }
   }
-}
 
-// 添加清除消息方法
-const clearMessages = () => {
-  messages.value = []
-}
+  // 添加清除消息方法
+  const clearMessages = () => {
+    messages.value = []
+  }
 
   const loadFriends = async () => {
     try {
@@ -121,15 +123,41 @@ const clearMessages = () => {
     }
   }
 
+  // 新增加载群聊消息方法
+  const loadGroupMessages = async (groupId) => {
+    try {
+      const response = await axios.get(`${getBaseURL()}/api/group-messages`, {
+        params: { groupId }
+      })
+      messages.value = response.data.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }))
+    } catch (error) {
+      console.error('加载群消息失败:', error)
+      alert('加载群消息失败')
+    }
+  }
+
+  // 新增设置当前聊天类型方法
+  const setCurrentChat = (id, type = 'private') => {
+    currentChat.value = id
+    currentChatType.value = type
+  }
+
   return {
     currentChat,
+    currentChatType,
     messages,
     friends,
+    groups,
     currentFriend,
     connectWebSocket,
     sendMessage,
     loadMessages,
     loadFriends,
-    clearMessages 
+    clearMessages,
+    loadGroupMessages,  // 导出加载群聊消息的方法
+    setCurrentChat  // 导出设置当前聊天类型的方法
   }
 })
