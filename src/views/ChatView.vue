@@ -1189,7 +1189,30 @@ const connectWebSocket = () => {
       }
           // 群聊消息处理
       if (message.type === 'group-message') {
-        handleGroupMessage(message)
+        // 如果当前正在这个群聊中，则添加到消息列表
+        if (store.currentChat === message.data.to && store.currentChatType === 'group') {
+          const newMessage = {
+            ...message.data,
+            _id: message.data._id,
+            from: message.data.from,
+            to: message.data.to,
+            content: message.data.content,
+            type: message.data.type,
+            fileUrl: message.data.fileUrl,
+            timestamp: new Date(message.data.timestamp),
+            chatType: 'group'
+          }
+          
+          store.messages.push(newMessage)
+        }
+        
+        // 更新群聊未读消息计数
+        if (store.currentChat !== message.data.to || store.currentChatType !== 'group') {
+          const groupIndex = store.groups.findIndex(g => g._id === message.data.to)
+          if (groupIndex !== -1) {
+            store.groups[groupIndex].unreadCount = (store.groups[groupIndex].unreadCount || 0) + 1
+          }
+        }
         return
       }
       // 统一处理所有消息
