@@ -731,30 +731,24 @@ const startVideoCall = async () => {
     
     localStream.value = await navigator.mediaDevices.getUserMedia(constraints);
     
-    // 2. 立即禁用所有轨道（核心修改）
-    localStream.value.getTracks().forEach(track => {
-      track.enabled = false; // 禁用摄像头和麦克风
-    });
+    // 2. 创建 peerConnection 后再添加轨道
+    createPeerConnection(); // 确保先创建连接
     
-    // 3. 更新状态变量
-    cameraEnabled.value = false;
-    micEnabled.value = false;
+    // 3. 添加轨道（核心修复）
+    if (peerConnection.value) {
+      localStream.value.getTracks().forEach(track => {
+        peerConnection.value.addTrack(track, localStream.value);
+      });
+    } else {
+      throw new Error('PeerConnection 创建失败');
+    }
     
-    // 4. 继续后续流程
-    createPeerConnection();
-    
-    // 添加轨道（此时轨道已被禁用）
-    localStream.value.getTracks().forEach(track => {
-      peerConnection.value.addTrack(track, localStream.value);
-    });
-    
-    // 显示本地视频
+    // 4. 显示本地视频
     if (localVideo.value) {
       localVideo.value.srcObject = localStream.value;
       localVideo.value.muted = true;
       localVideo.value.play().catch(e => {
         console.error('本地视频播放失败:', e);
-        document.body.click();
         setTimeout(() => localVideo.value.play(), 500);
       });
     }
@@ -1423,27 +1417,23 @@ const connectWebSocket = () => {
     }
   }
 
-  ws.onclose = (event) => {
-    console.log('连接关闭，代码:', event.code, '原因:', event.reason)
-    clearInterval(heartbeatInterval)
+// 在 WebSocket 的 onclose 事件中
+ws.onclose = (event) => {
+  clearInterval(heartbeatInterval);
+  console.log('连接关闭，代码:', event.code, '原因:', event.reason);
   
-  // 立即尝试重连（指数退避）
-  const reconnect = () => {
+  // 使用指数退避策略重连
+  const reconnectDelay = Math.min(5000, 1000 * Math.pow(2, reconnectAttempts));
+  
+  setTimeout(() => {
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      console.log(`尝试第 ${reconnectAttempts + 1} 次重连...`)
-      store.ws = connectWebSocket()
-      reconnectAttempts++
+      console.log(`尝试第 ${reconnectAttempts + 1} 次重连...`);
+      store.ws = connectWebSocket();
+      reconnectAttempts++;
     }
-  }
-  
-  // 首次立即重连，后续使用延迟
-  if (reconnectAttempts === 0) {
-    reconnect()
-  } else {
-    const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
-    setTimeout(reconnect, delay)
-  }
-}
+  }, reconnectDelay);
+};
+
 
   ws.onerror = (error) => {
     console.error('WebSocket错误:', error)
