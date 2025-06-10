@@ -266,6 +266,9 @@
           <button class="video-btn toggle-facing" @click="toggleGroupCameraFacing">
             <img src="./png/switch-camera.png" alt="切换摄像头方向">
           </button>
+          <button class="video-btn screen-share" @click="toggleGroupScreenShare">
+            <img :src='isGroupScreenSharing ? "./png/screen-share-active.png" : "./png/screen-share.png"' alt="投屏">
+          </button>
         </div>
       </div>
     </div>
@@ -337,6 +340,8 @@ const groupCameraEnabled = ref(false)
 const groupMicEnabled = ref(false)
 const groupFacingMode = ref('user')
 const fullscreenUserId = ref(null)
+const isGroupScreenSharing = ref(false)
+const groupScreenStream = ref(null)
 
 // 创建群聊
 const createGroup = async () => {
@@ -516,6 +521,7 @@ onBeforeUnmount(() => {
 
 
 // 新增群视频通话功能
+// 修改群视频发起方法
 const startGroupVideoCall = async () => {
   try {
     groupVideoCallModal.value = true
@@ -538,9 +544,9 @@ const startGroupVideoCall = async () => {
       localVideo.value.play().catch(console.error)
     }
     
-    // 通知群成员
+    // 通知群成员 - 修复信号类型
     sendGroupVideoSignal({
-      type: 'group-video-invite',
+      signalType: 'invite', // 改为明确的邀请类型
       groupId: store.currentChat,
       from: userId
     })
@@ -552,10 +558,95 @@ const startGroupVideoCall = async () => {
   }
 }
 
-// 处理群视频信号
+
+// 新增群视频投屏功能
+const toggleGroupScreenShare = async () => {
+  try {
+    if (isGroupScreenSharing.value) {
+      // 停止投屏
+      groupScreenStream.value.getTracks().forEach(track => track.stop())
+      groupScreenStream.value = null
+      
+      // 恢复摄像头
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: groupFacingMode.value },
+        audio: groupMicEnabled.value
+      })
+      
+      const newVideoTrack = cameraStream.getVideoTracks()[0]
+      
+      // 更新本地流
+      groupLocalStream.value.getVideoTracks().forEach(track => track.stop())
+      groupLocalStream.value.removeTrack(groupLocalStream.value.getVideoTracks()[0])
+      groupLocalStream.value.addTrack(newVideoTrack)
+      
+      // 更新所有PeerConnection
+      Object.values(groupPeerConnections.value).forEach(pc => {
+        const sender = pc.getSenders().find(s => s.track.kind === 'video')
+        if (sender) {
+          sender.replaceTrack(newVideoTrack)
+        }
+      })
+      
+      // 更新视频元素
+      if (localVideo.value) {
+        localVideo.value.srcObject = groupLocalStream.value
+      }
+      
+      isGroupScreenSharing.value = false
+      groupCameraEnabled.value = true
+    } else {
+      // 开始投屏
+      groupScreenStream.value = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false
+      })
+      
+      const screenTrack = groupScreenStream.value.getVideoTracks()[0]
+      
+      // 替换视频轨道
+      groupLocalStream.value.getVideoTracks().forEach(track => track.stop())
+      groupLocalStream.value.removeTrack(groupLocalStream.value.getVideoTracks()[0])
+      groupLocalStream.value.addTrack(screenTrack)
+      
+      // 更新所有PeerConnection
+      Object.values(groupPeerConnections.value).forEach(pc => {
+        const sender = pc.getSenders().find(s => s.track.kind === 'video')
+        if (sender) {
+          sender.replaceTrack(screenTrack)
+        }
+      })
+      
+      // 更新视频元素
+      if (localVideo.value) {
+        localVideo.value.srcObject = groupLocalStream.value
+      }
+      
+      // 监听投屏结束事件
+      screenTrack.onended = () => {
+        if (isGroupScreenSharing.value) {
+          toggleGroupScreenShare()
+        }
+      }
+      
+      isGroupScreenSharing.value = true
+      groupCameraEnabled.value = true
+    }
+  } catch (error) {
+    console.error('群视频投屏失败:', error)
+    
+    if (error.name !== 'NotAllowedError') {
+      alert(`投屏失败: ${error.message}`)
+    }
+  }
+}
+
+// 修改群视频信号处理
 const handleGroupVideoSignal = async (signal) => {
-  // 邀请处理
-  if (signal.type === 'group-video-invite') {
+  console.log('收到群视频信号:', signal);
+  
+  // 邀请处理 - 修复信号类型检查
+  if (signal.signalType === 'invite') {
     if (confirm(`是否加入 ${getGroupName(signal.groupId)} 的群视频通话?`)) {
       joinGroupVideoCall(signal.groupId, signal.from)
     }
@@ -563,7 +654,7 @@ const handleGroupVideoSignal = async (signal) => {
   }
   
   // 加入通知
-  if (signal.type === 'group-video-join') {
+  if (signal.signalType === 'join') { // 修改为检查signalType
     addGroupMember(signal.userId)
     
     // 如果是发起者，创建连接
@@ -574,27 +665,28 @@ const handleGroupVideoSignal = async (signal) => {
   }
   
   // 信令处理
-  if (signal.type === 'group-video-signal') {
+  if (signal.signalType === 'offer' || signal.signalType === 'answer' || signal.signalType === 'candidate') {
     const pc = groupPeerConnections.value[signal.from]
     if (!pc) return
     
-    if (signal.sdp) {
+    if (signal.signalType === 'offer' || signal.signalType === 'answer') {
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
-      if (signal.sdp.type === 'offer') {
+      if (signal.signalType === 'offer') {
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
         sendGroupVideoSignal({
-          type: 'group-video-signal',
+          signalType: 'answer',
           to: signal.from,
           sdp: pc.localDescription
         })
       }
     } 
-    else if (signal.candidate) {
+    else if (signal.signalType === 'candidate') {
       pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
     }
   }
 }
+
 
 // 加入群视频通话
 const joinGroupVideoCall = async (groupId, initiatorId) => {
@@ -621,7 +713,7 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     
     // 通知发起者
     sendGroupVideoSignal({
-      type: 'group-video-join',
+      signalType: 'join', // 使用signalType而不是type
       groupId,
       to: initiatorId,
       userId
@@ -638,6 +730,7 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
 }
 
 // 为成员创建PeerConnection
+// 修改创建PeerConnection方法
 const createPeerConnectionForMember = (memberId) => {
   const pc = new RTCPeerConnection({
     iceServers: [
@@ -646,8 +739,20 @@ const createPeerConnectionForMember = (memberId) => {
         urls: "turn:openrelay.metered.ca:80",
         username: "openrelayproject",
         credential: "openrelayproject"
+      },
+      // 添加更多TURN服务器提高连接成功率
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "f1b294a9e6d3a1c522e46c1d",
+        credential: "5VYADY2pNp8YTM0R"
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "f1b294a9e6d3a1c522e46c1d",
+        credential: "5VYADY2pNp8YTM0R"
       }
-    ]
+    ],
+    iceTransportPolicy: 'relay' // 强制使用TURN服务器，提高NAT穿透率
   })
   
   // 添加本地轨道
@@ -655,6 +760,29 @@ const createPeerConnectionForMember = (memberId) => {
     groupLocalStream.value.getTracks().forEach(track => {
       pc.addTrack(track, groupLocalStream.value)
     })
+  }
+  
+  // 处理ICE候选 - 添加超时和重试机制
+  let iceGatheringTimeout = null
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      // 清除之前的超时
+      if (iceGatheringTimeout) clearTimeout(iceGatheringTimeout)
+      
+      sendGroupVideoSignal({
+        signalType: 'candidate',
+        to: memberId,
+        candidate: event.candidate
+      })
+      
+      // 设置新的超时（5秒后重试）
+      iceGatheringTimeout = setTimeout(() => {
+        if (pc.iceGatheringState !== 'complete') {
+          console.log('ICE收集超时，尝试重新收集')
+          pc.restartIce()
+        }
+      }, 5000)
+    }
   }
   
   // 处理远程轨道
@@ -669,16 +797,6 @@ const createPeerConnectionForMember = (memberId) => {
     })
   }
   
-  // ICE候选处理
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      sendGroupVideoSignal({
-        type: 'group-video-signal',
-        to: memberId,
-        candidate: event.candidate
-      })
-    }
-  }
   
   // 保存连接
   groupPeerConnections.value[memberId] = pc
@@ -1550,6 +1668,11 @@ const connectWebSocket = () => {
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data)
+          // 新增：群视频信号处理
+      if (message.type === 'group-video-signal') {
+        handleGroupVideoSignal(message) // 调用群视频信号处理函数
+        return
+      }
       // 视频信号处理
       if (message.type === 'video-signal') {
         handleVideoSignal(message)
@@ -2623,4 +2746,16 @@ z-index: -1;
   display: flex;
   gap: 15px;
 }
+/* 确保投屏按钮图标路径正确 */
+.group-video-controls .video-btn.screen-share img {
+  width: 24px;
+  height: 24px;
+  filter: invert(1); /* 白色图标 */
+}
+
+/* 激活状态的投屏按钮 */
+.group-video-controls .video-btn.screen-share.active img {
+  filter: invert(0.5) sepia(1) saturate(5) hue-rotate(175deg); /* 蓝色图标 */
+}
+
 </style>
