@@ -12,7 +12,8 @@ export const useChatStore = defineStore('chat', () => {
   const friends = ref([])
   const groups = ref([])
   const socket = ref(null)
-  let emitSignal = null // 群聊视频信令处理器
+
+  let emitSignal = null // ✅ 群聊信令回调
 
   const currentFriend = computed(() => {
     return friends.value.find(f => f._id === currentChat.value)
@@ -21,6 +22,7 @@ export const useChatStore = defineStore('chat', () => {
   const connectWebSocket = (userId) => {
     const WS_URL = import.meta.env.VITE_WS_URL
     const pingInterval = 25000
+
     socket.value = new WebSocket(`${WS_URL}?userId=${userId}`)
 
     socket.value.onopen = () => {
@@ -38,13 +40,13 @@ export const useChatStore = defineStore('chat', () => {
     socket.value.onmessage = (event) => {
       const data = JSON.parse(event.data)
 
-      // ✅ 群聊视频信令转发给组件处理
+      // ✅ 群聊视频信令处理
       if (data.type === 'group-call-signal') {
-        emitSignal && emitSignal(data)
+        emitSignal?.(data)
         return
       }
 
-      // 好友在线状态更新
+      // ✅ 好友状态变更
       if (data.type === 'status-update') {
         const friend = friends.value.find(f => f._id === data.userId)
         if (friend) {
@@ -54,7 +56,7 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
-      // 普通消息（无 type）
+      // ✅ 文本消息（无 type）
       if (!data.type) {
         if (
           data.from === currentChat.value ||
@@ -69,9 +71,9 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    // 心跳机制
+    // ✅ WebSocket 心跳机制
     const heartbeat = setInterval(() => {
-      if (socket.value.readyState === WebSocket.OPEN) {
+      if (socket.value?.readyState === WebSocket.OPEN) {
         socket.value.send('{}')
       }
     }, pingInterval)
@@ -82,7 +84,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const sendMessage = (content) => {
-    if (!content.trim() || !currentChat.value) return
+    if (!content.trim() || !currentChat.value || !socket.value) return
 
     const msg = {
       from: localStorage.getItem('userId'),
@@ -94,7 +96,7 @@ export const useChatStore = defineStore('chat', () => {
     socket.value.send(JSON.stringify(msg))
   }
 
-  // ✅ 新增：发送视频信令方法（自动区分私聊/群聊）
+  // ✅ 发送视频信令（用于私聊或群聊）
   const sendSignal = (signal) => {
     if (!socket.value || socket.value.readyState !== WebSocket.OPEN) return
 
@@ -118,16 +120,26 @@ export const useChatStore = defineStore('chat', () => {
       })
       messages.value = res.data.map(msg => ({
         ...msg,
-        _id: msg._id,
-        from: msg.from,
-        to: msg.to,
-        content: msg.content,
         type: msg.type || 'text',
-        fileUrl: msg.fileUrl,
         timestamp: new Date(msg.timestamp)
       }))
     } catch (error) {
       console.error('加载消息失败:', error)
+    }
+  }
+
+  const loadGroupMessages = async (groupId) => {
+    try {
+      const res = await axios.get(`${getBaseURL()}/api/group-messages`, {
+        params: { groupId }
+      })
+      messages.value = res.data.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }))
+    } catch (error) {
+      console.error('加载群消息失败:', error)
+      alert('加载群消息失败')
     }
   }
 
@@ -149,27 +161,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  const loadGroupMessages = async (groupId) => {
-    try {
-      const response = await axios.get(`${getBaseURL()}/api/group-messages`, {
-        params: { groupId }
-      })
-      messages.value = response.data.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp)
-      }))
-    } catch (error) {
-      console.error('加载群消息失败:', error)
-      alert('加载群消息失败')
-    }
-  }
-
   const setCurrentChat = (id, type = 'private') => {
     currentChat.value = id
     currentChatType.value = type
   }
 
-  // ✅ 组件订阅群聊信令用
+  // ✅ 组件注册信令回调
   const onGroupSignal = (cb) => {
     emitSignal = cb
   }
@@ -184,12 +181,12 @@ export const useChatStore = defineStore('chat', () => {
     socket,
     connectWebSocket,
     sendMessage,
-    sendSignal,           // ✅ 导出信令发送方法
+    sendSignal,
     loadMessages,
-    loadFriends,
-    clearMessages,
     loadGroupMessages,
+    clearMessages,
+    loadFriends,
     setCurrentChat,
-    onGroupSignal         // ✅ 导出注册信令回调方法
+    onGroupSignal
   }
 })

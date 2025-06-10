@@ -1574,7 +1574,6 @@ watch(() => store.messages, async () => {
   }
 }, { deep: true })
 
-// 初始化加载
 onMounted(async () => {
   try {
     // 加载好友列表
@@ -1591,24 +1590,76 @@ onMounted(async () => {
       params: { userId }
     })
     store.groups = groupsRes.data.groups
-    
-    // 建立WebSocket连接
-    store.ws = connectWebSocket()
+
+    // 建立 WebSocket 连接
+    store.connectWebSocket()
+
+    // 注册群聊信令回调
+    store.onGroupSignal(async (msg) => {
+      if (msg.chatId !== store.currentChat) return
+
+      const { from, signalType, sdp, candidate } = msg
+      let pc = groupPeers.value[from]
+
+      if (!pc) {
+        pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+              urls: 'turn:openrelay.metered.ca:80',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            },
+            {
+              urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+              username: 'webrtc',
+              credential: 'webrtc'
+            }
+          ]
+        })
+
+        // 添加本地流轨道
+        localStream.value.getTracks().forEach(t => pc.addTrack(t, localStream.value))
+
+        pc.ontrack = e => {
+          groupStreams.value[from] = e.streams[0]
+        }
+
+        pc.onicecandidate = e => {
+          if (e.candidate) {
+            sendGroupSignal({ to: from, candidate: e.candidate })
+          }
+        }
+
+        groupPeers.value[from] = pc
+      }
+
+      if (signalType === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        sendGroupSignal({ to: from, type: 'answer', sdp: answer.sdp })
+      } else if (signalType === 'answer') {
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }))
+      } else if (candidate) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate))
+      }
+    })
+
   } catch (error) {
     console.error('初始化失败:', error)
     alert('初始化失败，请刷新页面重试')
   }
 })
+
 onBeforeUnmount(() => {
-  // 全屏事件监听清理
+  // 清理全屏监听
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
   document.removeEventListener('msfullscreenchange', handleFullscreenChange)
 
-  // 清理私聊通话
+  // 清理通话
   endVideoCall()
-
-  // 清理群聊通话
   endGroupCall()
 })
 </script>
