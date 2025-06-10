@@ -30,7 +30,12 @@ export const useChatStore = defineStore('chat', () => {
     }
     socket.value.onmessage = (event) => {
       const data = JSON.parse(event.data)
-      
+            // 群视频信号处理
+      if (data.type === 'group-video-signal') {
+        // 直接转发给前端处理
+        emit('group-video-signal', data);
+        return;
+      }
       // 处理消息
       if (!data.type) { // 普通消息
         if (data.from === currentChat.value || data.to === currentChat.value) {
