@@ -230,30 +230,29 @@
     </div>
     
 
-        <!-- 在原有视频通话模态框下方添加多人视频模态框 -->
-    <div v-if="groupVideoCallModal" class="group-video-modal">
-      <div class="group-video-container" ref="groupFullscreenContainer">
-        <!-- 本地视频流 -->
-        <!-- 修复视频元素引用 -->
-        <div class="video-item" :class="{ 'fullscreen-item': fullscreenUserId === userId }">
-          <video ref="groupLocalVideo" autoplay muted playsinline></video>
-          <div class="video-label">我</div>
-          <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(userId)">全屏</button>
-        </div>
-
-        <!-- 远程视频流 -->
-        <div 
-          v-for="(stream, uid) in groupRemoteStreams" 
-          :key="uid"
-          class="video-item"
-          :class="{ 'fullscreen-item': fullscreenUserId === uid }"
-        >
-          <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
-          <div class="video-label">{{ getUsernameById(uid) }}</div>
-          <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
-        </div>
-        
-        <!-- 控制按钮 -->
+  <!-- 群视频模态框 -->
+  <div v-if="groupVideoCallModal" class="group-video-modal">
+    <div class="group-video-container">
+      <!-- 本地视频流 -->
+      <div class="video-item" :class="{ 'fullscreen-item': fullscreenUserId === userId }">
+        <video ref="groupLocalVideo" autoplay muted playsinline></video>
+        <div class="video-label">我</div>
+        <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(userId)">全屏</button>
+      </div>
+      
+      <!-- 远程视频流 -->
+      <div 
+        v-for="(stream, uid) in groupRemoteStreams" 
+        :key="uid"
+        class="video-item"
+        :class="{ 'fullscreen-item': fullscreenUserId === uid }"
+      >
+        <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
+        <div class="video-label">{{ getUsernameById(uid) }}</div>
+        <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
+      </div>
+      
+      <!-- ... 控制按钮 ... -->
         <div class="group-video-controls">
           <button class="video-btn end-call" @click="endGroupVideoCall">
             <img src="./png/end-call.png" alt="结束通话">
@@ -344,7 +343,8 @@ const fullscreenUserId = ref(null)
 const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
 
-// 新增方法设置远程视频引用
+// 添加视频元素引用管理
+const groupLocalVideo = ref(null)
 const remoteVideoRefs = ref({})
 
 const setRemoteVideoRef = (uid, el) => {
@@ -663,7 +663,7 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 加入通知 - 修复信号类型检查
+  // 加入通知
   if (signal.signalType === 'join') {
     console.log(`成员 ${signal.userId} 加入群视频`)
     addGroupMember(signal.userId)
@@ -675,7 +675,7 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 信令处理 - 修复offer处理
+  // 信令处理 - 修复状态问题
   if (signal.sdp) {
     const pc = groupPeerConnections.value[signal.from]
     if (!pc) {
@@ -684,13 +684,23 @@ const handleGroupVideoSignal = async (signal) => {
     }
     
     try {
+      // 检查当前状态，避免在稳定状态下设置answer
+      if (signal.sdp.type === 'answer' && pc.signalingState !== 'have-local-offer') {
+        console.warn(`收到answer但当前状态为${pc.signalingState}，跳过设置`)
+        return
+      }
+      
       // 设置远程描述
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+      console.log(`成功设置远程描述: ${signal.sdp.type}`)
       
       // 如果是offer，创建answer
       if (signal.sdp.type === 'offer') {
         console.log('收到offer，创建answer...')
-        const answer = await pc.createAnswer()
+        const answer = await pc.createAnswer({
+          offerToReceiveVideo: true,
+          offerToReceiveAudio: true
+        })
         await pc.setLocalDescription(answer)
         
         sendGroupVideoSignal({
@@ -701,6 +711,14 @@ const handleGroupVideoSignal = async (signal) => {
       }
     } catch (error) {
       console.error('处理SDP失败:', error)
+      
+      // 状态错误时尝试重新协商
+      if (error.toString().includes('wrong state')) {
+        console.log('尝试重新协商...')
+        if (isGroupCallInitiator()) {
+          createPeerConnectionForMember(signal.from)
+        }
+      }
     }
     return
   }
@@ -717,6 +735,7 @@ const handleGroupVideoSignal = async (signal) => {
     }
   }
 }
+
 
 
 
@@ -738,19 +757,18 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     groupCameraEnabled.value = true
     groupMicEnabled.value = true
     
-    // 显示本地视频
-    const localVideoEl = document.querySelector('[ref="groupLocalVideo"]')
-    if (localVideoEl) {
-      localVideoEl.srcObject = groupLocalStream.value
-      localVideoEl.muted = true
-      localVideoEl.play().catch(e => {
+    // 显示本地视频 - 使用ref直接访问
+    if (groupLocalVideo.value) {
+      groupLocalVideo.value.srcObject = groupLocalStream.value
+      groupLocalVideo.value.muted = true
+      groupLocalVideo.value.play().catch(e => {
         console.error('本地视频播放失败:', e)
         document.body.click()
-        setTimeout(() => localVideoEl.play(), 500)
+        setTimeout(() => groupLocalVideo.value.play(), 500)
       })
     }
     
-    // 通知发起者 - 修复信号类型
+    // 通知发起者
     sendGroupVideoSignal({
       signalType: 'join',
       groupId,
@@ -770,13 +788,13 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
 
 
 // 为成员创建PeerConnection
-// 修复PeerConnection创建方法
 const createPeerConnectionForMember = (memberId) => {
   console.log(`为成员 ${memberId} 创建PeerConnection`)
   
   // 如果已存在连接，先关闭
   if (groupPeerConnections.value[memberId]) {
     groupPeerConnections.value[memberId].close()
+    delete groupPeerConnections.value[memberId]
   }
   
   const pc = new RTCPeerConnection({
@@ -791,10 +809,54 @@ const createPeerConnectionForMember = (memberId) => {
         urls: "turn:global.relay.metered.ca:80",
         username: "f1b294a9e6d3a1c522e46c1d",
         credential: "5VYADY2pNp8YTM0R"
+      },
+      {
+        urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+        username: "webrtc",
+        credential: "webrtc"
       }
     ],
-    iceTransportPolicy: 'relay'
+    iceTransportPolicy: 'all' // 改为all提高连接成功率
   })
+  
+  // ==================== 增强稳定性代码开始 ====================
+  // 添加ICE连接状态监控
+  pc.oniceconnectionstatechange = () => {
+    const iceState = pc.iceConnectionState
+    console.log(`ICE连接状态: ${iceState}`)
+    
+    // ICE失败时尝试重启
+    if (iceState === 'failed') {
+      console.log('ICE连接失败，尝试重启...')
+      pc.restartIce()
+    }
+  }
+  
+  // 添加ICE收集状态监控
+  pc.onicegatheringstatechange = () => {
+    console.log(`ICE收集状态: ${pc.iceGatheringState}`)
+    
+    // 如果ICE收集超时，尝试重新收集
+    if (pc.iceGatheringState === 'gathering') {
+      setTimeout(() => {
+        if (pc.iceGatheringState === 'gathering') {
+          console.log('ICE收集超时，尝试重新收集')
+          pc.restartIce()
+        }
+      }, 10000) // 10秒超时
+    }
+  }
+  
+  // 添加网络监控
+  pc.onnegotiationneeded = () => {
+    console.log('需要重新协商')
+  }
+  
+  // 添加信令状态监控
+  pc.onsignalingstatechange = () => {
+    console.log(`信令状态: ${pc.signalingState}`)
+  }
+  // ==================== 增强稳定性代码结束 ====================
   
   // 添加本地轨道
   if (groupLocalStream.value) {
@@ -805,23 +867,25 @@ const createPeerConnectionForMember = (memberId) => {
   
   // 处理远程轨道 - 修复流分配
   pc.ontrack = (event) => {
-    console.log(`收到来自 ${memberId} 的远程轨道`)
+    console.log(`收到来自 ${memberId} 的远程轨道`, event.streams)
     
     // 确保分配新流
-    groupRemoteStreams.value[memberId] = event.streams[0]
-    
-    nextTick(() => {
-      const videoEl = document.querySelector(`[ref="remoteVideo_${memberId}"]`)
-      if (videoEl) {
-        videoEl.srcObject = event.streams[0]
-        videoEl.play().catch(e => {
-          console.error('播放远程视频失败:', e)
-          // 解决自动播放策略
-          document.body.click()
-          setTimeout(() => videoEl.play(), 500)
-        })
-      }
-    })
+    if (event.streams && event.streams.length > 0) {
+      groupRemoteStreams.value[memberId] = event.streams[0]
+      
+      nextTick(() => {
+        const videoEl = remoteVideoRefs.value[memberId]
+        if (videoEl) {
+          videoEl.srcObject = event.streams[0]
+          videoEl.play().catch(e => {
+            console.error('播放远程视频失败:', e)
+            // 解决自动播放策略
+            document.body.click()
+            setTimeout(() => videoEl.play(), 500)
+          })
+        }
+      })
+    }
   }
   
   // ICE候选处理
@@ -838,6 +902,12 @@ const createPeerConnectionForMember = (memberId) => {
   // 连接状态处理
   pc.onconnectionstatechange = () => {
     console.log(`与 ${memberId} 的连接状态: ${pc.connectionState}`)
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      console.log(`连接断开，关闭与 ${memberId} 的PeerConnection`)
+      pc.close()
+      delete groupPeerConnections.value[memberId]
+      delete groupRemoteStreams.value[memberId]
+    }
   }
   
   // 保存连接
@@ -846,7 +916,10 @@ const createPeerConnectionForMember = (memberId) => {
   // 如果是发起者，创建offer
   if (isGroupCallInitiator()) {
     console.log('作为发起者，创建offer...')
-    pc.createOffer()
+    pc.createOffer({
+      offerToReceiveVideo: true,
+      offerToReceiveAudio: true
+    })
       .then(offer => {
         return pc.setLocalDescription(offer)
       })
@@ -862,6 +935,8 @@ const createPeerConnectionForMember = (memberId) => {
       })
   }
 }
+
+
 
 
 // 发送群视频信号
@@ -890,7 +965,18 @@ const isGroupCallInitiator = () => {
 }
 
 // 结束群视频通话
+// 修复成员退出处理
 const endGroupVideoCall = () => {
+  // 发送结束信号给所有成员
+  groupCallMembers.value.forEach(memberId => {
+    if (memberId !== userId) {
+      sendGroupVideoSignal({
+        signalType: 'end-call',
+        to: memberId
+      })
+    }
+  })
+
   // 关闭所有PeerConnection
   Object.values(groupPeerConnections.value).forEach(pc => {
     pc.close()
