@@ -164,7 +164,7 @@
       <!-- 新增视频通话按钮 -->
       <button 
         class="videobtn"
-        @click="startVideoCall"
+        @click="onVideoClick"
       >
         <img src="./png/video.png" alt="视频通话">
       </button>
@@ -185,7 +185,7 @@
     </div>
     
     <!-- 新增视频通话模态框 -->
-    <div v-if="videoCallModal" class="video-modal">
+    <div v-if="videoCallModal && isPrivateChat" class="video-modal">
       <div class="video-container" ref="fullscreenContainer">
         <!-- 本地视频流 -->
         <video ref="localVideo" autoplay muted playsinline @error="handleVideoError('local')"></video>
@@ -228,6 +228,22 @@
         连接状态: {{ connectionState }}
       </div>
     </div>
+
+    <!-- 群聊多人会议模态框 -->
+    <div v-if="groupCallModal" class="group-video-modal">
+      <div class="videos-grid">
+        <video
+          v-for="(peerVid, id) in groupStreams"
+          :key="id"
+          :ref="setGroupVideoRef(id)"
+          autoplay
+          playsinline
+        ></video>
+      </div>
+      <div class="video-controls">
+        <button @click="endGroupCall">结束会议</button>
+      </div>
+    </div>
     
     
     <!-- 图片预览模态框 -->
@@ -257,6 +273,14 @@ const store = useChatStore()
 const newMessage = ref('')
 const userId = localStorage.getItem('userId')
 const chatArea = ref(null)
+// 私聊/群聊判定
+const isPrivateChat = computed(() => store.currentChatType === 'private')
+const isGroupChat   = computed(() => store.currentChatType === 'group')
+// 新增群聊多人会议状态
+const groupCallModal = ref(false)
+const groupPeers = ref({})       // { peerId: RTCPeerConnection }
+const groupStreams = ref({})     // { peerId: MediaStream }
+const videoRefs = {}             // 本地存 video DOM refs
 // 新增状态变量
 const showAddFriendModal = ref(false)
 const activeTab = ref('friend') // 'friend' 或 'group'
@@ -361,6 +385,145 @@ const currentGroup = computed(() => {
   return store.groups.find(g => g._id === store.currentChat)
 })
 
+
+function setGroupVideoRef(id) {
+  return (el) => { if (el) el.srcObject = groupStreams.value[id] }
+}
+
+// 点击按钮：私聊一对一 or 群聊多人
+function onVideoClick() {
+  if (isPrivateChat.value) {
+    startVideoCall()
+  } else if (isGroupChat.value) {
+    startGroupCall()
+  }
+}
+
+// 发起群聊多人会议
+async function startGroupCall() {
+  if (!store.currentChat) { alert('请选择群聊'); return }
+  groupCallModal.value = true
+
+  // 获取本地流
+  const local = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  // 禁用本地预览等逻辑可根据需要
+  // store.groupMembers 返回群成员列表（含自己）
+  const members = store.groups.find(g => g._id === store.currentChat).members
+
+  // 对每个其他成员创建 PeerConnection 并发 offer
+  members.forEach(member => {
+    if (member.userId === userId) return
+    const pc = new RTCPeerConnection({ 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+          username: "webrtc",
+          credential: "webrtc"
+        }
+      ]
+    })
+    // 添加本地轨道
+    local.getTracks().forEach(t => pc.addTrack(t, local))
+    // 收到远端流
+    pc.ontrack = e => { groupStreams.value[member.userId] = e.streams[0] }
+    // ICE 候选
+    pc.onicecandidate = e => {
+      if (e.candidate) sendGroupSignal({
+        to: member.userId,
+        candidate: e.candidate
+      })
+    }
+    groupPeers.value[member.userId] = pc
+  })
+
+  // send offer to each
+  for (const pid in groupPeers.value) {
+    const pc = groupPeers.value[pid]
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    sendGroupSignal({
+      to: pid,
+      type: 'offer',
+      sdp: offer.sdp
+    })
+  }
+}
+
+// 结束多人会议
+function endGroupCall() {
+  for (const pid in groupPeers.value) {
+    groupPeers.value[pid].close()
+  }
+  groupPeers.value = {}
+  groupStreams.value = {}
+  groupCallModal.value = false
+}
+
+// 发送群聊信令
+function sendGroupSignal({ to, type = 'candidate', sdp = null, candidate = null }) {
+  store.ws.send(JSON.stringify({
+    type: 'group-call-signal',
+    from: userId,
+    to,
+    chatId: store.currentChat,
+    signalType: type,
+    sdp,
+    candidate
+  }))
+}
+
+// 处理收到的群聊信令
+store.ws.addEventListener('message', async ev => {
+  const msg = JSON.parse(ev.data)
+  if (msg.type !== 'group-call-signal' || msg.chatId !== store.currentChat) return
+
+  const { from, signalType, sdp, candidate } = msg
+  let pc = groupPeers.value[from]
+  if (!pc) {
+    // 新建PeerConnection for incoming caller
+    pc = new RTCPeerConnection({ 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+          username: "webrtc",
+          credential: "webrtc"
+        }
+      ]
+    })
+    // 添加本地流 if not yet
+    // assume localStream is stored
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream))
+    pc.ontrack = e => { groupStreams.value[from] = e.streams[0] }
+    pc.onicecandidate = e => {
+      if (e.candidate) sendGroupSignal({ to: from, candidate: e.candidate })
+    }
+    groupPeers.value[from] = pc
+  }
+
+  if (signalType === 'offer') {
+    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }))
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    sendGroupSignal({ to: from, type: 'answer', sdp: answer.sdp })
+  } else if (signalType === 'answer') {
+    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }))
+  } else if (candidate) {
+    await pc.addIceCandidate(new RTCIceCandidate(candidate))
+  }
+})
+
 // 真正的全屏切换功能
 const toggleFullscreen = () => {
   const container = fullscreenContainer.value;
@@ -424,9 +587,6 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
 });
 
-onBeforeUnmount(() => {
-  document.removeEventListener('fullscreenchange', handleFullscreenChange);
-});
 
 const handleFullscreenChange = () => {
   if (!document.fullscreenElement) {
@@ -442,23 +602,11 @@ const handleFullscreenChange = () => {
   }
 };
 
-onBeforeUnmount(() => {
-  document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-  document.removeEventListener('msfullscreenchange', handleFullscreenChange);
-});
-
-
-
-
 
 
 // 添加连接状态响应式变量
 const connectionState = ref('');
-// 生命周期钩子
-onBeforeUnmount(() => {
-  endVideoCall()
-})
+
 
 const startVideoCall = async () => {
   if (!store.currentChat) {
@@ -1451,7 +1599,18 @@ onMounted(async () => {
     alert('初始化失败，请刷新页面重试')
   }
 })
+onBeforeUnmount(() => {
+  // 全屏事件监听清理
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+  document.removeEventListener('msfullscreenchange', handleFullscreenChange)
 
+  // 清理私聊通话
+  endVideoCall()
+
+  // 清理群聊通话
+  endGroupCall()
+})
 </script>
 
 <!-- 样式保持不变 -->
@@ -2172,5 +2331,12 @@ z-index: -1;
   font-weight: bold;
   margin-bottom: 4px;
   color: #ff9800;
+}
+
+
+.videos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
 }
 </style>
