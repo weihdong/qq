@@ -651,9 +651,16 @@ const toggleGroupScreenShare = async () => {
   }
 }
 
-// 修改群视频信号处理函数
+// 在 handleGroupVideoSignal 函数中修复信号处理逻辑
 const handleGroupVideoSignal = async (signal) => {
   console.log('收到群视频信号:', signal);
+  
+  // 结束通话信号处理 - 修复位置
+  if (signal.signalType === 'end-call') {
+    console.log(`收到结束通话信号，来自 ${signal.from}`)
+    endGroupVideoCall()
+    return // 确保在函数内部
+  }
   
   // 邀请处理
   if (signal.signalType === 'invite') {
@@ -678,7 +685,7 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 新成员通知 - 新增信号类型
+  // 新成员通知
   if (signal.signalType === 'new-member') {
     console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`)
     createPeerConnectionForMember(signal.newMemberId)
@@ -749,8 +756,10 @@ const handleGroupVideoSignal = async (signal) => {
         console.error('添加ICE候选失败:', error)
       }
     }
+    return
   }
 }
+
 
 
 
@@ -1059,12 +1068,6 @@ const endGroupVideoCall = () => {
   fullscreenUserId.value = null
 }
 
-// 处理结束信号
-if (signal.signalType === 'end-call') {
-  console.log(`收到结束通话信号，来自 ${signal.from}`)
-  endGroupVideoCall()
-  return
-}
 
 
 // 切换群视频全屏
