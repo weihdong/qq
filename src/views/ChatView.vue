@@ -291,7 +291,9 @@ const facingMode = ref('user') // 'user' 前置摄像头, 'environment' 后置�
 const isScreenSharing = ref(false)
 const screenStream = ref(null)
 
-
+// 新增状态变量
+const currentRoomId = ref(null) // 当前通话房间ID
+const isCaller = ref(false) // 是否是通话发起者
 
 
 // 新增状态变量
@@ -485,12 +487,13 @@ const canStartVideoCall = computed(() => {
 })
 
 const startVideoCall = async () => {
-  if (!store.currentChat) {
-    alert('请先选择好友');
-    return;
-  }
+  if (!store.currentChat) return
   
   try {
+    // 创建唯一房间ID
+    currentRoomId.value = `room_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+    isCaller.value = true
+    
     videoCallModal.value = true
     videoParticipants.value = []
     
@@ -526,8 +529,8 @@ const startVideoCall = async () => {
       // 私聊视频通话
       createPeerConnection(store.currentChat)
     } else {
-      // 群聊视频通话
-      await startGroupVideoCall()
+      // 群聊视频通话 - 发送邀请
+      sendGroupVideoInvite()
     }
   } catch (error) {
     console.error('启动视频通话失败:', error)
@@ -562,6 +565,64 @@ const startGroupVideoCall = async () => {
     console.error('启动群视频通话失败:', error)
   }
 }
+// 修改加入通话方法
+const joinVideoCall = async (roomId) => {
+  try {
+    currentRoomId.value = roomId
+    isCaller.value = false
+    
+    videoCallModal.value = true
+    videoParticipants.value = []
+    
+    // 获取当前用户信息
+    const currentUser = {
+      id: userId,
+      username: localStorage.getItem('username') || '我'
+    }
+    
+    // 添加当前用户到参与者列表
+    videoParticipants.value.push({
+      ...currentUser,
+      stream: null,
+      connection: null
+    })
+    
+    // 创建本地流
+    const constraints = { 
+      video: true,
+      audio: true
+    }
+    
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    
+    // 显示本地视频
+    if (localVideo.value) {
+      localVideo.value.srcObject = localStream.value
+      localVideo.value.muted = true
+    }
+    
+    // 通知服务器加入房间
+    sendJoinRoomSignal()
+  } catch (error) {
+    console.error('加入视频通话失败:', error)
+    alert(`加入通话失败: ${error.message}`)
+    endVideoCall()
+  }
+}
+
+// 新增：发送加入房间信号
+const sendJoinRoomSignal = () => {
+  if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return
+  
+  const signal = {
+    type: 'video-join',
+    roomId: currentRoomId.value,
+    userId: userId,
+    username: localStorage.getItem('username') || '用户'
+  }
+  
+  store.ws.send(JSON.stringify(signal))
+}
 
 // 修改 createPeerConnection 方法（修复轨道处理）
 const createPeerConnection = (targetId, username = '') => {
@@ -581,44 +642,65 @@ const createPeerConnection = (targetId, username = '') => {
     ]
   };
   
-  peerConnection.value = new RTCPeerConnection(configuration);
+
+  
+  const connection = new RTCPeerConnection(configuration)
   
   // 添加本地轨道
   if (localStream.value) {
     localStream.value.getTracks().forEach(track => {
-      peerConnection.value.addTrack(track, localStream.value);
-    });
+      connection.addTrack(track, localStream.value)
+    })
   }
-
+  
   // 处理远程轨道
-  peerConnection.value.ontrack = (event) => {
-    console.log('收到远程轨道:', event.streams.length);
-
+  connection.ontrack = (event) => {
+    console.log('收到远程轨道:', event.streams.length)
+    
     if (event.streams && event.streams[0]) {
-      const stream = event.streams[0];
-
+      const stream = event.streams[0]
+      
       // 查找或添加参与者
-      const existingIndex = videoParticipants.value.findIndex(p => p.id === targetId);
+      const existingIndex = videoParticipants.value.findIndex(p => p.id === targetId)
       if (existingIndex === -1) {
         videoParticipants.value.push({
           id: targetId,
           username: username || `用户 ${targetId.slice(0, 4)}`,
           stream: stream
-        });
+        })
       } else {
-        videoParticipants.value[existingIndex].stream = stream;
+        videoParticipants.value[existingIndex].stream = stream
       }
-
+      
       // 更新视频元素
       nextTick(() => {
-        const videoElement = document.querySelector(`[ref="remoteVideo_${targetId}"]`);
+        const videoElement = document.querySelector(`[ref="remoteVideo_${targetId}"]`)
         if (videoElement) {
-          videoElement.srcObject = stream;
-          videoElement.play().catch(console.error);
+          videoElement.srcObject = stream
+          videoElement.play().catch(console.error)
         }
-      });
+      })
     }
-  };
+  }
+  
+  // 创建offer
+  if (isCaller.value) {
+    connection.createOffer()
+      .then(offer => connection.setLocalDescription(offer))
+      .then(() => {
+        sendVideoSignal({
+          signalType: 'offer',
+          sdp: connection.localDescription.sdp,
+          to: targetId,
+          roomId: currentRoomId.value
+        })
+      })
+      .catch(error => console.error('创建offer失败:', error))
+  }
+  
+  // 存储连接
+  peerConnections[targetId] = connection
+
 
   // 增强ICE候选处理
   peerConnection.value.onicecandidate = (event) => {
@@ -658,35 +740,57 @@ const createPeerConnection = (targetId, username = '') => {
   };
 };
 // 新增群视频邀请方法
-const sendGroupVideoInvite = (memberIds) => {
+// 修改群视频邀请方法
+const sendGroupVideoInvite = () => {
   if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return
   
   const invite = {
     type: 'video-invite',
     from: userId,
-    groupId: store.currentChat,
-    members: memberIds
+    roomId: currentRoomId.value,
+    groupId: store.currentChat
   }
   
   store.ws.send(JSON.stringify(invite))
 }
+
 // 处理视频邀请
 const handleVideoInvite = (invite) => {
   if (invite.type === 'video-invite') {
     const confirmJoin = confirm(`您收到来自 ${invite.from} 的群视频通话邀请，是否加入？`)
     if (confirmJoin) {
-      startVideoCall()
+      joinVideoCall(invite.roomId)
     }
   }
 }
 
-// 修改 sendVideoSignal 方法（统一信号格式）
+
+
+// 处理加入房间信号
+const handleJoinRoom = (signal) => {
+  if (signal.type === 'video-join' && currentRoomId.value === signal.roomId && isCaller.value) {
+    // 发起者创建与新加入者的连接
+    createPeerConnection(signal.userId, signal.username)
+    
+    // 更新参与者列表
+    const existingIndex = videoParticipants.value.findIndex(p => p.id === signal.userId)
+    if (existingIndex === -1) {
+      videoParticipants.value.push({
+        id: signal.userId,
+        username: signal.username,
+        stream: null
+      })
+    }
+  }
+}
+// 修改发送视频信号方法
 const sendVideoSignal = (data) => {
   if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return
   
   const signal = {
     type: 'video-signal',
     from: userId,
+    roomId: currentRoomId.value,
     ...data
   }
   
@@ -709,7 +813,13 @@ const handleVideoError = (type) => {
 
 // 处理收到的视频信号
 // 修改 handleVideoSignal 方法（修复远程流处理）
+// 修改处理视频信号方法
 const handleVideoSignal = async (signal) => {
+  // 检查房间ID是否匹配
+  if (signal.roomId !== currentRoomId.value) {
+    console.log('收到不属于当前房间的视频信号，忽略')
+    return
+  }
   console.log('收到视频信号:', signal);
   
   if (signal.signalType === 'end-call') {
@@ -803,20 +913,17 @@ const handleVideoSignal = async (signal) => {
     }
   }
 };
-// 修改 endVideoCall 方法（彻底清理资源）
+// 修改结束通话方法
 const endVideoCall = () => {
-  console.log('结束视频通话');
+  console.log('结束视频通话')
   
-  // 防止重复调用
-  if (!peerConnection.value && !localStream.value) return;
-  
-  // 发送结束信号
-  if (store.currentChat && store.ws?.readyState === WebSocket.OPEN) {
+  // 发送结束通话信号
+  if (currentRoomId.value && store.ws?.readyState === WebSocket.OPEN) {
     store.ws.send(JSON.stringify({
-      type: 'video-signal',
-      signalType: 'end-call',
-      to: store.currentChat
-    }));
+      type: 'video-end',
+      roomId: currentRoomId.value,
+      userId
+    }))
   }
   // 清理投屏资源
   if (screenStream.value) {
@@ -861,6 +968,9 @@ const endVideoCall = () => {
   
   videoCallModal.value = false;
   connectionState.value = '';
+    // 重置房间状态
+  currentRoomId.value = null
+  isCaller.value = false
 };
 // 新增切换前置后置摄像头功能
 const toggleCameraFacing = async () => {
@@ -1244,9 +1354,15 @@ const connectWebSocket = () => {
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data)
-      // 视频信号处理
+      // 处理视频邀请
       if (message.type === 'video-invite') {
         handleVideoInvite(message)
+        return
+      }
+      
+      // 处理加入房间信号
+      if (message.type === 'video-join') {
+        handleJoinRoom(message)
         return
       }
             // 结束通话处理
