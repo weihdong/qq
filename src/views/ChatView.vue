@@ -234,12 +234,13 @@
     <div v-if="groupVideoCallModal" class="group-video-modal">
       <div class="group-video-container" ref="groupFullscreenContainer">
         <!-- 本地视频流 -->
+        <!-- 修复视频元素引用 -->
         <div class="video-item" :class="{ 'fullscreen-item': fullscreenUserId === userId }">
           <video ref="groupLocalVideo" autoplay muted playsinline></video>
           <div class="video-label">我</div>
           <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(userId)">全屏</button>
         </div>
-        
+
         <!-- 远程视频流 -->
         <div 
           v-for="(stream, uid) in groupRemoteStreams" 
@@ -247,7 +248,7 @@
           class="video-item"
           :class="{ 'fullscreen-item': fullscreenUserId === uid }"
         >
-          <video :ref="`remoteVideo_${uid}`" autoplay playsinline></video>
+          <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
           <div class="video-label">{{ getUsernameById(uid) }}</div>
           <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
         </div>
@@ -342,6 +343,15 @@ const groupFacingMode = ref('user')
 const fullscreenUserId = ref(null)
 const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
+
+// 新增方法设置远程视频引用
+const remoteVideoRefs = ref({})
+
+const setRemoteVideoRef = (uid, el) => {
+  if (el) {
+    remoteVideoRefs.value[uid] = el
+  }
+}
 
 // 创建群聊
 const createGroup = async () => {
@@ -641,11 +651,11 @@ const toggleGroupScreenShare = async () => {
   }
 }
 
-// 修改群视频信号处理
+// 修改群视频信号处理函数
 const handleGroupVideoSignal = async (signal) => {
   console.log('收到群视频信号:', signal);
   
-  // 邀请处理 - 修复信号类型检查
+  // 邀请处理
   if (signal.signalType === 'invite') {
     if (confirm(`是否加入 ${getGroupName(signal.groupId)} 的群视频通话?`)) {
       joinGroupVideoCall(signal.groupId, signal.from)
@@ -653,8 +663,9 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 加入通知
-  if (signal.signalType === 'join') { // 修改为检查signalType
+  // 加入通知 - 修复信号类型检查
+  if (signal.signalType === 'join') {
+    console.log(`成员 ${signal.userId} 加入群视频`)
     addGroupMember(signal.userId)
     
     // 如果是发起者，创建连接
@@ -664,33 +675,56 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 信令处理
-  if (signal.signalType === 'offer' || signal.signalType === 'answer' || signal.signalType === 'candidate') {
+  // 信令处理 - 修复offer处理
+  if (signal.sdp) {
     const pc = groupPeerConnections.value[signal.from]
-    if (!pc) return
+    if (!pc) {
+      console.warn(`未找到与 ${signal.from} 的PeerConnection`)
+      return
+    }
     
-    if (signal.signalType === 'offer' || signal.signalType === 'answer') {
+    try {
+      // 设置远程描述
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
-      if (signal.signalType === 'offer') {
+      
+      // 如果是offer，创建answer
+      if (signal.sdp.type === 'offer') {
+        console.log('收到offer，创建answer...')
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
+        
         sendGroupVideoSignal({
           signalType: 'answer',
           to: signal.from,
-          sdp: pc.localDescription
+          sdp: answer
         })
       }
-    } 
-    else if (signal.signalType === 'candidate') {
-      pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
+    } catch (error) {
+      console.error('处理SDP失败:', error)
+    }
+    return
+  }
+  
+  // 处理ICE候选
+  if (signal.candidate) {
+    const pc = groupPeerConnections.value[signal.from]
+    if (pc) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
+      } catch (error) {
+        console.error('添加ICE候选失败:', error)
+      }
     }
   }
 }
 
 
+
 // 加入群视频通话
+// 修复加入群视频通话
 const joinGroupVideoCall = async (groupId, initiatorId) => {
   try {
+    console.log(`加入群视频: ${groupId}, 发起者: ${initiatorId}`)
     groupVideoCallModal.value = true
     groupCallMembers.value = [userId]
     
@@ -705,15 +739,20 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     groupMicEnabled.value = true
     
     // 显示本地视频
-    if (localVideo.value) {
-      localVideo.value.srcObject = groupLocalStream.value
-      localVideo.value.muted = true
-      localVideo.value.play().catch(console.error)
+    const localVideoEl = document.querySelector('[ref="groupLocalVideo"]')
+    if (localVideoEl) {
+      localVideoEl.srcObject = groupLocalStream.value
+      localVideoEl.muted = true
+      localVideoEl.play().catch(e => {
+        console.error('本地视频播放失败:', e)
+        document.body.click()
+        setTimeout(() => localVideoEl.play(), 500)
+      })
     }
     
-    // 通知发起者
+    // 通知发起者 - 修复信号类型
     sendGroupVideoSignal({
-      signalType: 'join', // 使用signalType而不是type
+      signalType: 'join',
       groupId,
       to: initiatorId,
       userId
@@ -729,9 +768,17 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
   }
 }
 
+
 // 为成员创建PeerConnection
-// 修改创建PeerConnection方法
+// 修复PeerConnection创建方法
 const createPeerConnectionForMember = (memberId) => {
+  console.log(`为成员 ${memberId} 创建PeerConnection`)
+  
+  // 如果已存在连接，先关闭
+  if (groupPeerConnections.value[memberId]) {
+    groupPeerConnections.value[memberId].close()
+  }
+  
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -740,19 +787,13 @@ const createPeerConnectionForMember = (memberId) => {
         username: "openrelayproject",
         credential: "openrelayproject"
       },
-      // 添加更多TURN服务器提高连接成功率
       {
         urls: "turn:global.relay.metered.ca:80",
         username: "f1b294a9e6d3a1c522e46c1d",
         credential: "5VYADY2pNp8YTM0R"
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username: "f1b294a9e6d3a1c522e46c1d",
-        credential: "5VYADY2pNp8YTM0R"
       }
     ],
-    iceTransportPolicy: 'relay' // 强制使用TURN服务器，提高NAT穿透率
+    iceTransportPolicy: 'relay'
   })
   
   // 添加本地轨道
@@ -762,57 +803,66 @@ const createPeerConnectionForMember = (memberId) => {
     })
   }
   
-  // 处理ICE候选 - 添加超时和重试机制
-  let iceGatheringTimeout = null
+  // 处理远程轨道 - 修复流分配
+  pc.ontrack = (event) => {
+    console.log(`收到来自 ${memberId} 的远程轨道`)
+    
+    // 确保分配新流
+    groupRemoteStreams.value[memberId] = event.streams[0]
+    
+    nextTick(() => {
+      const videoEl = document.querySelector(`[ref="remoteVideo_${memberId}"]`)
+      if (videoEl) {
+        videoEl.srcObject = event.streams[0]
+        videoEl.play().catch(e => {
+          console.error('播放远程视频失败:', e)
+          // 解决自动播放策略
+          document.body.click()
+          setTimeout(() => videoEl.play(), 500)
+        })
+      }
+    })
+  }
+  
+  // ICE候选处理
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      // 清除之前的超时
-      if (iceGatheringTimeout) clearTimeout(iceGatheringTimeout)
-      
       sendGroupVideoSignal({
         signalType: 'candidate',
         to: memberId,
         candidate: event.candidate
       })
-      
-      // 设置新的超时（5秒后重试）
-      iceGatheringTimeout = setTimeout(() => {
-        if (pc.iceGatheringState !== 'complete') {
-          console.log('ICE收集超时，尝试重新收集')
-          pc.restartIce()
-        }
-      }, 5000)
     }
   }
   
-  // 处理远程轨道
-  pc.ontrack = (event) => {
-    groupRemoteStreams.value[memberId] = event.streams[0]
-    nextTick(() => {
-      const videoEl = document.querySelector(`[ref="remoteVideo_${memberId}"]`)
-      if (videoEl) {
-        videoEl.srcObject = event.streams[0]
-        videoEl.play().catch(console.error)
-      }
-    })
+  // 连接状态处理
+  pc.onconnectionstatechange = () => {
+    console.log(`与 ${memberId} 的连接状态: ${pc.connectionState}`)
   }
-  
   
   // 保存连接
   groupPeerConnections.value[memberId] = pc
   
   // 如果是发起者，创建offer
   if (isGroupCallInitiator()) {
-    pc.createOffer().then(offer => {
-      pc.setLocalDescription(offer)
-      sendGroupVideoSignal({
-        type: 'group-video-signal',
-        to: memberId,
-        sdp: offer
+    console.log('作为发起者，创建offer...')
+    pc.createOffer()
+      .then(offer => {
+        return pc.setLocalDescription(offer)
       })
-    })
+      .then(() => {
+        sendGroupVideoSignal({
+          signalType: 'offer',
+          to: memberId,
+          sdp: pc.localDescription
+        })
+      })
+      .catch(error => {
+        console.error('创建offer失败:', error)
+      })
   }
 }
+
 
 // 发送群视频信号
 const sendGroupVideoSignal = (data) => {
@@ -869,25 +919,46 @@ const toggleGroupFullscreen = (uid) => {
   }
 }
 
-// 切换群视频摄像头
+// 修复群视频摄像头切换
 const toggleGroupCamera = () => {
   if (!groupLocalStream.value) return
+  
   groupCameraEnabled.value = !groupCameraEnabled.value
   const videoTracks = groupLocalStream.value.getVideoTracks()
+  
   if (videoTracks.length > 0) {
     videoTracks[0].enabled = groupCameraEnabled.value
+    
+    // 更新所有PeerConnection
+    Object.values(groupPeerConnections.value).forEach(pc => {
+      const sender = pc.getSenders().find(s => s.track.kind === 'video')
+      if (sender && sender.track) {
+        sender.track.enabled = groupCameraEnabled.value
+      }
+    })
   }
 }
 
-// 切换群视频麦克风
+// 修复群视频麦克风切换
 const toggleGroupMicrophone = () => {
   if (!groupLocalStream.value) return
+  
   groupMicEnabled.value = !groupMicEnabled.value
   const audioTracks = groupLocalStream.value.getAudioTracks()
+  
   if (audioTracks.length > 0) {
     audioTracks[0].enabled = groupMicEnabled.value
+    
+    // 更新所有PeerConnection
+    Object.values(groupPeerConnections.value).forEach(pc => {
+      const sender = pc.getSenders().find(s => s.track.kind === 'audio')
+      if (sender && sender.track) {
+        sender.track.enabled = groupMicEnabled.value
+      }
+    })
   }
 }
+
 
 // 切换群视频摄像头方向
 const toggleGroupCameraFacing = async () => {
