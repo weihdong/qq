@@ -228,7 +228,7 @@
           </button>
                 <!-- 修改全屏按钮 -->
           <button class="video-btn fullscreen-btn" @click="toggleFullscreen">
-            <img :src="isFullscreen ? '/png/fullscreen-exit.png' : '/png/fullscreen.png'" alt="全屏">
+            <img :src="isFullscreen ? './png/fullscreen-exit.png' : './png/fullscreen.png'" alt="全屏">
           </button>
         </div>
       </div>
