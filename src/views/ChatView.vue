@@ -230,31 +230,29 @@
     </div>
     
 
-    <!-- 群视频模态框 -->
-    <div v-if="groupVideoCallModal" class="group-video-modal">
-      <div class="group-video-container">
-        <!-- 本地视频流 -->
-        <div class="video-item" :class="{ 'fullscreen-item': fullscreenUserId === userId }">
-          <!-- +++ 确保绑定正确的引用 +++ -->
-          <video ref="groupLocalVideo" autoplay muted playsinline></video>
-          <div class="video-label">我</div>
-          <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(userId)">全屏</button>
-        </div>
-        
-        <!-- 远程视频流 -->
-        <div 
-          v-for="(stream, uid) in groupRemoteStreams" 
-          :key="uid"
-          class="video-item"
-          :class="{ 'fullscreen-item': fullscreenUserId === uid }"
-        >
-          <!-- +++ 确保使用正确的引用设置 +++ -->
-          <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
-          <div class="video-label">{{ getUsernameById(uid) }}</div>
-          <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
-        </div>
-        
-        <!-- ... 控制按钮 ... -->
+  <!-- 群视频模态框 -->
+  <div v-if="groupVideoCallModal" class="group-video-modal">
+    <div class="group-video-container">
+      <!-- 本地视频流 -->
+      <div class="video-item" :class="{ 'fullscreen-item': fullscreenUserId === userId }">
+        <video ref="groupLocalVideo" autoplay muted playsinline></video>
+        <div class="video-label">我</div>
+        <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(userId)">全屏</button>
+      </div>
+      
+      <!-- 远程视频流 -->
+      <div 
+        v-for="(stream, uid) in groupRemoteStreams" 
+        :key="uid"
+        class="video-item"
+        :class="{ 'fullscreen-item': fullscreenUserId === uid }"
+      >
+        <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
+        <div class="video-label">{{ getUsernameById(uid) }}</div>
+        <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
+      </div>
+      
+      <!-- ... 控制按钮 ... -->
         <div class="group-video-controls">
           <button class="video-btn end-call" @click="endGroupVideoCall">
             <img src="./png/end-call.png" alt="结束通话">
@@ -549,22 +547,16 @@ const startGroupVideoCall = async () => {
     groupCameraEnabled.value = true
     groupMicEnabled.value = true
     
-    // +++ 确保本地视频正确绑定 +++
-    nextTick(() => {
-      if (groupLocalVideo.value && groupLocalStream.value) {
-        groupLocalVideo.value.srcObject = groupLocalStream.value
-        groupLocalVideo.value.muted = true
-        groupLocalVideo.value.play().catch(e => {
-          console.error('本地视频播放失败:', e)
-          document.body.click()
-          setTimeout(() => groupLocalVideo.value.play(), 500)
-        })
-      }
-    })
+    // 显示本地视频
+    if (localVideo.value) {
+      localVideo.value.srcObject = groupLocalStream.value
+      localVideo.value.muted = true
+      localVideo.value.play().catch(console.error)
+    }
     
-    // 通知群成员
+    // 通知群成员 - 修复信号类型
     sendGroupVideoSignal({
-      signalType: 'invite',
+      signalType: 'invite', // 改为明确的邀请类型
       groupId: store.currentChat,
       from: userId
     })
@@ -686,25 +678,7 @@ const handleGroupVideoSignal = async (signal) => {
     }
     return
   }
-    // +++ 处理新成员加入通知 +++
-    if (signal.signalType === 'new-member') {
-    console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`)
-    
-    // 创建与新成员的连接
-    if (signal.newMemberId !== userId && !groupPeerConnections.value[signal.newMemberId]) {
-      createPeerConnectionForMember(signal.newMemberId)
-    }
-    
-    // 通知新成员创建与我的连接
-    if (userId !== signal.newMemberId) {
-      sendGroupVideoSignal({
-        signalType: 'new-member',
-        to: signal.newMemberId,
-        newMemberId: userId
-      })
-    }
-    return
-  }
+  
   // 加入通知
   if (signal.signalType === 'join') {
     console.log(`成员 ${signal.userId} 加入群视频`)
@@ -720,7 +694,21 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-
+  // 新成员通知处理
+  if (signal.signalType === 'new-member') {
+    console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`);
+    
+    // 确保不与自己建立连接
+    if (signal.newMemberId !== userId) {
+      createPeerConnectionForMember(signal.newMemberId);
+    }
+    
+    // 更新成员列表
+    if (!groupCallMembers.value.includes(signal.newMemberId)) {
+      groupCallMembers.value.push(signal.newMemberId);
+    }
+    return;
+  }
   
   // 信令处理
   if (signal.sdp) {
@@ -799,25 +787,29 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     groupVideoCallModal.value = true
     groupCallMembers.value = [userId]
     
-    // 获取媒体流
-    const constraints = { 
-      video: { facingMode: groupFacingMode.value },
-      audio: true
+    // 获取媒体流 - 确保只获取一次
+    if (!groupLocalStream.value) {
+      const constraints = { 
+        video: { facingMode: groupFacingMode.value },
+        audio: true
+      }
+      
+      groupLocalStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+      groupCameraEnabled.value = true
+      groupMicEnabled.value = true
     }
     
-    groupLocalStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-    groupCameraEnabled.value = true
-    groupMicEnabled.value = true
-    
-    // +++ 确保本地视频正确绑定 +++
+    // 显示本地视频 - 确保视频元素存在
     nextTick(() => {
-      if (groupLocalVideo.value && groupLocalStream.value) {
-        groupLocalVideo.value.srcObject = groupLocalStream.value
-        groupLocalVideo.value.muted = true
-        groupLocalVideo.value.play().catch(e => {
+      const localVideoEl = document.querySelector('[ref="groupLocalVideo"]')
+      if (localVideoEl && groupLocalStream.value) {
+        localVideoEl.srcObject = groupLocalStream.value
+        localVideoEl.muted = true
+        localVideoEl.play().catch(e => {
           console.error('本地视频播放失败:', e)
+          // 解决自动播放策略
           document.body.click()
-          setTimeout(() => groupLocalVideo.value.play(), 500)
+          setTimeout(() => localVideoEl.play(), 500)
         })
       }
     })
@@ -830,14 +822,38 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
       userId
     })
     
-    // +++ 创建与所有现有成员的连接 +++
+    // 创建与发起者的连接
+    createPeerConnectionForMember(initiatorId)
+    
+    // 如果是发起者，通知其他成员有新成员加入
     if (isGroupCallInitiator()) {
       groupCallMembers.value.forEach(memberId => {
-        if (memberId !== userId) {
-          createPeerConnectionForMember(memberId)
+        if (memberId !== userId && memberId !== initiatorId) {
+          sendGroupVideoSignal({
+            signalType: 'new-member',
+            to: memberId,
+            newMemberId: userId
+          })
         }
       })
     }
+    // 通知所有成员有新用户加入
+    groupCallMembers.value.forEach(memberId => {
+      if (memberId !== userId) {
+        sendGroupVideoSignal({
+          signalType: 'new-member',
+          to: memberId,
+          newMemberId: userId
+        });
+      }
+    });
+    
+    // 创建与所有现有成员的连接
+    groupCallMembers.value.forEach(memberId => {
+      if (memberId !== userId) {
+        createPeerConnectionForMember(memberId);
+      }
+    });
   } catch (error) {
     console.error('加入群视频失败:', error)
     alert(`加入群视频错误: ${error.message}`)
@@ -900,13 +916,13 @@ const createPeerConnectionForMember = (memberId) => {
     }
   }
   
-  // 添加ICE收集状态监控
+  // 添加ICE连接状态监控
   pc.oniceconnectionstatechange = () => {
-    const state = pc.iceConnectionState;
-    console.log(`ICE状态变化: ${state} (${memberId})`);
+    const iceState = pc.iceConnectionState;
+    console.log(`ICE状态变化: ${iceState} (${memberId})`);
     
     // 增强重连逻辑
-    if (state === 'disconnected' || state === 'failed') {
+    if (iceState === 'disconnected' || iceState === 'failed') {
       console.log(`连接断开，10秒后重连 ${memberId}`);
       setTimeout(() => {
         if (!groupPeerConnections.value[memberId]) {
@@ -929,57 +945,45 @@ const createPeerConnectionForMember = (memberId) => {
   // ==================== 结束增强代码 ====================
   
   // 添加本地轨道 - 确保只添加一次
-  // +++ 确保添加本地轨道 +++
   if (groupLocalStream.value) {
+    const existingTracks = pc.getSenders().map(s => s.track)
     groupLocalStream.value.getTracks().forEach(track => {
-      // 避免重复添加轨道
-      const existingTrack = pc.getSenders().some(sender => 
-        sender.track && sender.track.kind === track.kind
-      )
-      
-      if (!existingTrack) {
+      if (!existingTracks.includes(track)) {
         pc.addTrack(track, groupLocalStream.value)
       }
     })
   }
-
-  // +++ 优化远程轨道处理 +++
+  
+  // 处理远程轨道 - 修复流分配
+  // 修改ontrack事件处理
   pc.ontrack = (event) => {
-    console.log(`收到来自 ${memberId} 的远程轨道`, event.streams)
+    console.log(`收到来自 ${memberId} 的远程轨道`);
     
     // 确保使用第一个有效流
-    const stream = event.streams.find(s => s.getTracks().length > 0)
-    if (!stream) return
+    const stream = event.streams[0];
+    if (!stream) return;
     
     // 更新或创建流
-    groupRemoteStreams.value[memberId] = stream
+    groupRemoteStreams.value[memberId] = stream;
     
     nextTick(() => {
-      const videoEl = remoteVideoRefs.value[memberId]
-      if (!videoEl) return
-      
-      // +++ 确保只设置一次 +++
-      if (videoEl.srcObject !== stream) {
-        videoEl.srcObject = stream
-      }
-      
-      // 处理自动播放问题
-      const playVideo = () => {
+      const videoEl = remoteVideoRefs.value[memberId];
+      if (videoEl) {
+        videoEl.srcObject = stream;
         videoEl.play().catch(e => {
-          console.error('播放失败:', e)
-          const playButton = document.createElement('button')
-          playButton.className = 'video-play-button'
-          playButton.textContent = '点击播放'
+          console.error('播放失败:', e);
+          // 添加播放按钮解决自动播放问题
+          const playButton = document.createElement('button');
+          playButton.className = 'video-play-button';
+          playButton.textContent = '点击播放';
           playButton.onclick = () => {
-            videoEl.play().finally(() => playButton.remove())
-          }
-          videoEl.parentNode.appendChild(playButton)
-        })
+            videoEl.play().finally(() => playButton.remove());
+          };
+          videoEl.parentNode.appendChild(playButton);
+        });
       }
-      
-      setTimeout(playVideo, 500)
-    })
-  }
+    });
+  };
 
   
   // ICE候选处理
