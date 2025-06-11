@@ -40,8 +40,11 @@
 
     <!-- 添加好友弹窗 -->
     <!-- 添加好友弹窗 -->
-    <div v-if="showAddFriendModal" class="modal-mask">
-      <div class="modal">
+    <div v-if="showAddFriendModal" 
+       class="modal-mask" 
+       @click.self="toggleAddFriend"
+       tabindex="0"> <!-- 使div可获取焦点 -->
+      <div class="modal" @click.stop>
         <div class="modal-tabs" ref="tabsContainer">
           <div class="tabs-background"></div>
           <button :class="['tab-btn', { active: activeTab === 'friend' }]" @click="activeTab = 'friend'">好友</button>
@@ -69,7 +72,7 @@
         <!-- 群聊功能 -->
         <div v-if="activeTab === 'group'" class="group-section">
           <div class="create-group-row">
-            <button class="modal-btn create-group-btn" @click="createGroup" title="创建群聊"></button>
+            <button class="modal-btn create-group-btn" @click="createGroup" title="创建群聊">创建新群聊</button>
           </div>
           <div class="input-row">
             <input 
@@ -3152,12 +3155,13 @@ z-index: -1;
 
 /* 模态框主体 */
 .modal {
-  width: 320px;
+  width: 78%;
   background: white;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   padding: 24px;
   position: relative;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -3317,7 +3321,11 @@ z-index: -1;
   justify-content: center;
   margin-bottom: 16px;
 }
-
+.group-section, .friend-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 /* 取消按钮行 */
 .cancel-row {
   display: flex;
@@ -3331,21 +3339,21 @@ z-index: -1;
   gap: 12px;
 }
 
-/* 响应式调整 */
+/* 移动端适配 */
 @media (max-width: 480px) {
   .modal {
-    width: 90%;
-    padding: 16px;
+    width: 90vw;
+    min-height: 50vh;
   }
   
   .input-row {
     flex-direction: column;
   }
   
-  .modal-btn {
+  .action-buttons {
     width: 100%;
-    border-radius: 24px;
-    height: 44px;
+    justify-content: space-between;
+    margin-top: 12px;
   }
 }
 </style>
