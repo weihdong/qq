@@ -247,7 +247,13 @@
         class="video-item"
         :class="{ 'fullscreen-item': fullscreenUserId === uid }"
       >
-        <video :ref="el => setRemoteVideoRef(uid, el)" autoplay playsinline></video>
+        <video 
+          :ref="el => { 
+            if (el && uid !== userId) remoteVideoRefs[uid] = el 
+          }" 
+          autoplay 
+          playsinline
+        ></video>
         <div class="video-label">{{ getUsernameById(uid) }}</div>
         <button class="video-fullscreen-btn" @click="toggleGroupFullscreen(uid)">全屏</button>
       </div>
@@ -429,6 +435,39 @@ const getSenderName = (senderId) => {
 const currentGroup = computed(() => {
   return store.groups.find(g => g._id === store.currentChat)
 })
+// 新增：解决自动播放限制的全局方法
+const ensureVideoPlayback = (videoElement) => {
+  if (!videoElement) return;
+  
+  const playAttempt = () => {
+    videoElement.play().catch(e => {
+      console.warn('自动播放被阻止:', e);
+      
+      // 添加播放按钮覆盖层
+      if (!videoElement.parentNode.querySelector('.play-overlay')) {
+        const overlay = document.createElement('div');
+        overlay.className = 'play-overlay';
+        overlay.innerHTML = `
+          <button class="play-button">点击播放视频</button>
+        `;
+        videoElement.parentNode.appendChild(overlay);
+        
+        overlay.querySelector('.play-button').addEventListener('click', () => {
+          videoElement.play().then(() => overlay.remove());
+        });
+      }
+    });
+  };
+  
+  // 首次尝试
+  playAttempt();
+  
+  // 页面交互后重试
+  document.addEventListener('click', function handler() {
+    playAttempt();
+    document.removeEventListener('click', handler);
+  });
+};
 
 // 真正的全屏切换功能
 const toggleFullscreen = () => {
@@ -700,7 +739,10 @@ const handleGroupVideoSignal = async (signal) => {
     
     // 确保不与自己建立连接
     if (signal.newMemberId !== userId) {
-      createPeerConnectionForMember(signal.newMemberId);
+      // 检查是否已存在连接
+      if (!groupPeerConnections.value[signal.newMemberId]) {
+        createPeerConnectionForMember(signal.newMemberId);
+      }
     }
     
     // 更新成员列表
@@ -794,18 +836,29 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     
     // 显示本地视频 - 确保视频元素存在
     nextTick(() => {
-      const localVideoEl = document.querySelector('[ref="groupLocalVideo"]')
-      if (localVideoEl && groupLocalStream.value) {
-        localVideoEl.srcObject = groupLocalStream.value
-        localVideoEl.muted = true
-        localVideoEl.play().catch(e => {
-          console.error('本地视频播放失败:', e)
-          // 解决自动播放策略
-          document.body.click()
-          setTimeout(() => localVideoEl.play(), 500)
-        })
+      if (groupLocalVideo.value && groupLocalStream.value) {
+        groupLocalVideo.value.srcObject = groupLocalStream.value;
+        groupLocalVideo.value.muted = true;
+        
+        // 增强播放处理
+        const playWithFallback = () => {
+          groupLocalVideo.value.play().catch(e => {
+            console.error('本地视频播放失败:', e);
+            // 添加用户交互解决自动播放
+            const playButton = document.createElement('button');
+            playButton.className = 'video-play-button';
+            playButton.textContent = '点击播放';
+            playButton.onclick = () => {
+              groupLocalVideo.value.play().finally(() => playButton.remove());
+            };
+            groupLocalVideo.value.parentNode.appendChild(playButton);
+          });
+        };
+        
+        // 延迟播放避免冲突
+        setTimeout(playWithFallback, 300);
       }
-    })
+    });
     
     // 通知发起者
     sendGroupVideoSignal({
@@ -817,6 +870,12 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     
     // 创建与发起者的连接
     createPeerConnectionForMember(initiatorId)
+        // 创建与所有现有成员的连接（包括其他非发起者成员）
+    groupCallMembers.value.forEach(memberId => {
+      if (memberId !== userId) {
+        createPeerConnectionForMember(memberId);
+      }
+    });
     
     // 如果是发起者，通知其他成员有新成员加入
     if (isGroupCallInitiator()) {
@@ -830,7 +889,7 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
         }
       })
     }
-    // 通知所有成员有新用户加入
+    // 通知所有成员有新用户加入（包括其他参与者）
     groupCallMembers.value.forEach(memberId => {
       if (memberId !== userId) {
         sendGroupVideoSignal({
