@@ -783,15 +783,71 @@ const handleGroupVideoSignal = async (signal) => {
   // 加入通知
   if (signal.signalType === 'join') {
     console.log(`成员 ${signal.from} 加入群视频`);
-    addGroupMember(signal.from);
     
-    // 修复：使用正确的参数调用 createPeerConnectionForMember
-    if (signal.from !== userId) {
-      createPeerConnectionForMember(signal.from);
+    // 添加到成员列表
+    if (!groupCallMembers.value.includes(signal.from)) {
+      groupCallMembers.value.push(signal.from);
+    }
+    
+    // 为所有现有成员创建连接（包括新成员和已有成员之间）
+    createConnectionsForNewMember(signal.from);
+    return;
+  }
+    // 处理offer
+    if (signal.signalType === 'offer') {
+    const connectionId = signal.connectionId;
+    const pc = groupPeerConnections.value[connectionId];
+    
+    if (pc) {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        
+        sendGroupVideoSignal({
+          signalType: 'answer',
+          to: signal.from,
+          sdp: answer,
+          connectionId: connectionId
+        });
+      } catch (error) {
+        console.error('处理offer失败:', error);
+      }
     }
     return;
   }
   
+  // 处理answer
+  if (signal.signalType === 'answer') {
+    const connectionId = signal.connectionId;
+    const pc = groupPeerConnections.value[connectionId];
+    
+    if (pc) {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      } catch (error) {
+        console.error('设置answer失败:', error);
+      }
+    }
+    return;
+  }
+  
+  // 处理ICE候选
+  if (signal.signalType === 'candidate') {
+    const connectionId = signal.connectionId;
+    const pc = groupPeerConnections.value[connectionId];
+    
+    if (pc && signal.candidate) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } catch (error) {
+        console.error('添加ICE候选失败:', error);
+      }
+    }
+    return;
+  }
+
   // 新成员通知处理
   if (signal.signalType === 'new-member') {
     console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`);
@@ -971,70 +1027,79 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     endGroupVideoCall()
   }
 }
-
-// 修复PeerConnection创建方法
-const createPeerConnectionForMember = (memberId) => {
-  console.log(`为成员 ${memberId} 创建PeerConnection`);
+// 2. 添加新成员连接创建函数
+const createConnectionsForNewMember = (newMemberId) => {
+  // 为新成员创建与所有现有成员的连接
+  groupCallMembers.value.forEach(memberId => {
+    if (memberId !== userId && memberId !== newMemberId) {
+      if (!groupPeerConnections.value[`${newMemberId}-${memberId}`]) {
+        createPeerConnectionForMember(newMemberId, memberId);
+      }
+    }
+  });
+  
+  // 为所有现有成员创建与新成员的连接
+  groupCallMembers.value.forEach(memberId => {
+    if (memberId !== userId && memberId !== newMemberId) {
+      if (!groupPeerConnections.value[`${memberId}-${newMemberId}`]) {
+        createPeerConnectionForMember(memberId, newMemberId);
+      }
+    }
+  });
+  
+  // 为自己创建与新成员的连接
+  if (newMemberId !== userId && !groupPeerConnections.value[`${userId}-${newMemberId}`]) {
+    createPeerConnectionForMember(userId, newMemberId);
+  }
+}
+// 3. 修改PeerConnection创建函数
+const createPeerConnectionForMember = (localId, remoteId) => {
+  // 生成唯一的连接ID
+  const connectionId = `${localId}-${remoteId}`;
+  
+  console.log(`创建连接 ${connectionId}`);
   
   // 如果已存在连接，先关闭
-  if (groupPeerConnections.value[memberId]) {
-    groupPeerConnections.value[memberId].close();
-    delete groupPeerConnections.value[memberId];
+  if (groupPeerConnections.value[connectionId]) {
+    groupPeerConnections.value[connectionId].close();
+    delete groupPeerConnections.value[connectionId];
   }
   
+  // 创建新的PeerConnection
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { 
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      },
-      {
         urls: "turn:global.relay.metered.ca:80",
         username: "f1b294a9e6d3a1c522e46c1d",
         credential: "5VYADY2pNp8YTM0R"
-      },
-      {
-        urls: "turn:turn.anyfirewall.com:443?transport=tcp",
-        username: "webrtc",
-        credential: "webrtc"
       }
-    ],
-    iceTransportPolicy: 'all' // 改为all提高连接成功率
+    ]
   });
   
-  // 初始化候选队列
-  pc.candidateQueue = [];
-  
-  // 添加本地轨道 - 确保只添加一次
+  // 添加本地轨道
   if (groupLocalStream.value) {
-    const existingTracks = pc.getSenders().map(s => s.track);
     groupLocalStream.value.getTracks().forEach(track => {
-      if (!existingTracks.includes(track)) {
-        pc.addTrack(track, groupLocalStream.value);
-      }
+      pc.addTrack(track, groupLocalStream.value);
     });
   }
   
-  // 处理远程轨道 - 修复流分配
+  // 处理远程轨道
   pc.ontrack = (event) => {
-    console.log(`收到来自 ${memberId} 的远程轨道`);
-    
-    // 确保使用第一个有效流
     const stream = event.streams[0];
     if (!stream) return;
     
-    // 更新或创建流
-    groupRemoteStreams.value[memberId] = stream;
+    // 使用远程ID作为键存储流
+    groupRemoteStreams.value[remoteId] = stream;
     
+    // 确保视频元素存在
     nextTick(() => {
-      const videoEl = remoteVideoRefs.value[memberId];
+      const videoEl = document.getElementById(`remote-video-${remoteId}`);
       if (videoEl) {
         videoEl.srcObject = stream;
         videoEl.play().catch(e => {
           console.error('播放失败:', e);
-          // 添加播放按钮解决自动播放问题
+          // 添加播放按钮
           const playButton = document.createElement('button');
           playButton.className = 'video-play-button';
           playButton.textContent = '点击播放';
@@ -1046,85 +1111,50 @@ const createPeerConnectionForMember = (memberId) => {
       }
     });
   };
-
+  
   // ICE候选处理
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      // 只在收集阶段发送候选
-      if (pc.iceGatheringState === 'gathering') {
-        sendGroupVideoSignal({
-          signalType: 'candidate',
-          to: memberId,
-          candidate: event.candidate
-        });
-      }
+      sendGroupVideoSignal({
+        signalType: 'candidate',
+        to: remoteId,
+        candidate: event.candidate,
+        connectionId: connectionId
+      });
     }
   };
   
-  // 连接状态处理
+  // 连接状态监控
   pc.onconnectionstatechange = () => {
-    console.log(`与 ${memberId} 的连接状态: ${pc.connectionState}`);
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      console.log(`连接断开，关闭与 ${memberId} 的PeerConnection`);
-      
-      // 延迟关闭避免立即重连冲突
-      setTimeout(() => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-          pc.close();
-          delete groupPeerConnections.value[memberId];
-          delete groupRemoteStreams.value[memberId];
-        }
-      }, 5000); // 5秒后关闭
-    }
-  };
-  
-  // 添加ICE连接状态监控
-  pc.oniceconnectionstatechange = () => {
-    const iceState = pc.iceConnectionState;
-    console.log(`ICE状态变化: ${iceState} (${memberId})`);
-    
-    // 增强重连逻辑
-    if (iceState === 'disconnected' || iceState === 'failed') {
-      console.log(`连接断开，10秒后重连 ${memberId}`);
-      setTimeout(() => {
-        if (!groupPeerConnections.value[memberId]) {
-          console.log(`执行重连: ${memberId}`);
-          createPeerConnectionForMember(memberId);
-        }
-      }, 10000);
-    }
+    console.log(`连接 ${connectionId} 状态: ${pc.connectionState}`);
   };
   
   // 保存连接
-  groupPeerConnections.value[memberId] = pc;
+  groupPeerConnections.value[connectionId] = pc;
   
-  // 判断是否需要创建offer：使用确定性规则避免冲突
-  const shouldCreateOffer = () => {
-    // 规则：当前用户ID < 对方ID时创建offer
-    return userId.localeCompare(memberId) < 0;
+  // 创建offer的逻辑
+  const createOffer = async () => {
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      
+      sendGroupVideoSignal({
+        signalType: 'offer',
+        to: remoteId,
+        sdp: pc.localDescription,
+        connectionId: connectionId
+      });
+    } catch (error) {
+      console.error('创建offer失败:', error);
+    }
   };
-
-  if (shouldCreateOffer()) {
-    console.log('作为主动方，创建offer...');
-    setTimeout(() => {
-      if (pc.signalingState === 'stable') {
-        pc.createOffer({
-          offerToReceiveVideo: true,
-          offerToReceiveAudio: true
-        })
-        .then(offer => pc.setLocalDescription(offer))
-        .then(() => {
-          sendGroupVideoSignal({
-            signalType: 'offer',
-            to: memberId,
-            sdp: pc.localDescription
-          });
-        })
-        .catch(console.error);
-      }
-    }, Math.random() * 1000); // 随机延迟
+  
+  // 只有本地ID是当前用户时才创建offer
+  if (localId === userId) {
+    // 添加随机延迟避免冲突
+    setTimeout(createOffer, 300 + Math.random() * 700);
   }
-};
+}
 
 
 
@@ -1162,35 +1192,31 @@ const isGroupCallInitiator = () => {
 // 结束群视频通话
 // 修复成员退出处理
 const endGroupVideoCall = () => {
-  // 发送结束信号给所有成员
-  groupCallMembers.value.forEach(memberId => {
-    if (memberId !== userId) {
-      sendGroupVideoSignal({
-        signalType: 'end-call',
-        to: memberId
-      })
-    }
-  })
-
   // 关闭所有PeerConnection
   Object.values(groupPeerConnections.value).forEach(pc => {
-    pc.close()
-  })
-  groupPeerConnections.value = {}
+    pc.close();
+  });
+  
+  // 重置状态
+  groupPeerConnections.value = {};
+  groupRemoteStreams.value = {};
+  groupCallMembers.value = [];
   
   // 停止本地流
   if (groupLocalStream.value) {
-    groupLocalStream.value.getTracks().forEach(track => track.stop())
-    groupLocalStream.value = null
+    groupLocalStream.value.getTracks().forEach(track => track.stop());
+    groupLocalStream.value = null;
   }
   
-  // 清除远程流
-  groupRemoteStreams.value = {}
-  groupCallMembers.value = []
-  groupVideoCallModal.value = false
-  fullscreenUserId.value = null
+  // 关闭模态框
+  groupVideoCallModal.value = false;
+  
+  // 通知其他成员
+  sendGroupVideoSignal({
+    signalType: 'end-call',
+    groupId: store.currentChat
+  });
 }
-
 
 
 // 切换群视频全屏
