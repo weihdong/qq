@@ -39,41 +39,43 @@
     </div>
 
     <!-- 添加好友弹窗 -->
-    <div v-if="showAddFriendModal" class="modal-mask">
+    <div v-if="showAddFriendModal" class="modal-mask" @click.self="toggleAddFriend">
       <div class="modal">
-          <div class="modal-tabs">
-            <button :class="['tab-btn', { active: activeTab === 'friend' }]" @click="activeTab = 'friend'">好友</button>
-            <button :class="['tab-btn', { active: activeTab === 'group' }]" @click="activeTab = 'group'">群聊</button>
+        <div class="modal-tabs" ref="tabsRef" @mousedown="onDragStart" @mousemove="onDragMove" @mouseup="onDragEnd">
+          <!-- 滑块 -->
+          <div class="slider" :style="sliderStyle"></div>
+          <!-- 标签按钮 -->
+          <button class="tab-btn" :class="{ active: activeTab === 'friend' }" @click="switchTab('friend')">好友</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'group' }" @click="switchTab('group')">群聊</button>
+        </div>
+        <!-- 添加好友 -->
+        <div v-if="activeTab === 'friend'" class="tab-content">
+          <input 
+            v-model="newFriendName" 
+            placeholder="输入用户名"
+            class="modal-input"
+          />
+          <div class="modal-actions">
+            <button class="modal-btn circle-btn" @click="addFriend">添加</button>
+            <button class="modal-btn circle-btn" @click="toggleAddFriend">取消</button>
           </div>
-          
-          <!-- 添加好友 -->
-          <div v-if="activeTab === 'friend'">
+        </div>
+        <!-- 群聊功能 -->
+        <div v-else class="tab-content">
+          <button class="modal-btn create-group-btn circle-btn" @click="createGroup">创建群聊</button>
+          <div class="group-join">
             <input 
-              v-model="newFriendName" 
-              placeholder="输入用户名"
+              v-model="groupCodeToJoin" 
+              placeholder="输入群号"
               class="modal-input"
-            >
-            <div class="modal-actions">
-              <button class="modal-btn confirm-btn" @click="addFriend">添加</button>
-              <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
-            </div>
+            />
+            <button class="modal-btn circle-btn" @click="joinGroup">加入群聊</button>
           </div>
-          
-          <!-- 群聊功能 -->
-          <div v-if="activeTab === 'group'">
-            <button class="modal-btn create-group-btn" @click="createGroup">创建群聊</button>
-            <div class="group-join">
-              <input 
-                v-model="groupCodeToJoin" 
-                placeholder="输入群号"
-                class="modal-input"
-              >
-              <button class="modal-btn join-group-btn" @click="joinGroup">加入群聊</button>
-            </div>
-            <button class="modal-btn cancel-btn" @click="toggleAddFriend">取消</button>
-          </div>
+          <button class="modal-btn circle-btn" @click="toggleAddFriend">取消</button>
+        </div>
       </div>
     </div>
+
 
     <!-- 聊天区域 -->
     <div class="chat-area" ref="chatArea">
@@ -349,6 +351,59 @@ const fullscreenUserId = ref(null)
 const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
 
+
+// Slider state
+const tabsRef = ref(null);
+const sliderLeft = ref(0);
+const isDragging = ref(false);
+
+const sliderStyle = computed(() => ({
+  left: sliderLeft.value + 'px',
+}));
+
+const updateSliderPosition = () => {
+  const tabsEl = tabsRef.value;
+  if (!tabsEl) return;
+  const btns = tabsEl.querySelectorAll('.tab-btn');
+  const index = activeTab.value === 'friend' ? 0 : 1;
+  const targetBtn = btns[index];
+  sliderLeft.value = targetBtn.offsetLeft;
+};
+
+const switchTab = (tab) => {
+  activeTab.value = tab;
+  updateSliderPosition();
+};
+
+// Drag handlers
+const onDragStart = (e) => {
+  // Only start if clicked on slider area
+  const sliderEl = e.target.closest('.slider');
+  if (!sliderEl) return;
+  isDragging.value = true;
+  e.preventDefault();
+};
+
+const onDragMove = (e) => {
+  if (!isDragging.value) return;
+  const tabsEl = tabsRef.value;
+  const rect = tabsEl.getBoundingClientRect();
+  let x = e.clientX - rect.left;
+  // clamp x between 0 and tabs width-button width
+  x = Math.max(0, Math.min(x, rect.width - rect.height));
+  sliderLeft.value = x;
+};
+
+const onDragEnd = () => {
+  if (!isDragging.value) return;
+  isDragging.value = false;
+  const tabsEl = tabsRef.value;
+  const rect = tabsEl.getBoundingClientRect();
+  const mid = rect.width / 2;
+  // decide tab based on center
+  switchTab(sliderLeft.value < mid ? 'friend' : 'group');
+};
+
 // 添加视频元素引用管理
 const groupLocalVideo = ref(null)
 const remoteVideoRefs = ref({})
@@ -358,7 +413,13 @@ const setRemoteVideoRef = (uid, el) => {
     remoteVideoRefs.value[uid] = el
   }
 }
+onMounted(() => {
+  updateSliderPosition();
+});
 
+onBeforeUnmount(() => {
+  isDragging.value = false;
+});
 // 创建群聊
 const createGroup = async () => {
   try {
@@ -2336,91 +2397,7 @@ box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
   right: 1px;
 }
 }
-.modal-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(255,255,255,0.6);
-  backdrop-filter: blur(5px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 999;
-}
 
-.modal {
-  background: #fff;
-  border-radius: 48px;
-  padding: 28px;
-  width: 68%;
-  max-width: 320px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.12);
-}
-
-.modal-input {
-  width: 100%;
-  height: 52px;
-  padding: 0 0px;
-  border: 2px solid #f0f0f0;
-  border-radius: 40px;
-  font-size: 16px;
-  margin-bottom: 24px;
-  background: #fff;
-  transition: all 0.2s;
-}
-
-.modal-input:focus {
-  border-color: orange;
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(0,122,255,0.1);
-}
-
-.modal-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.modal-btn {
-  flex: 1;
-  height: 52px;
-  border: none;
-  border-radius: 40px;
-  font-size: 17px;
-  font-weight: 500;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.confirm-btn {
-  background: orange;
-  color: white;
-  margin-left: -4px; /* 视觉对齐补偿 */
-}
-
-.confirm-btn:active {
-  background: rgb(168, 109, 0);
-  transform: scale(0.96);
-}
-
-.cancel-btn {
-  background: transparent;
-  color: #666;
-  border: 2px solid #e3e3e3;
-  margin-right: -4px; /* 视觉对齐补偿 */
-}
-
-.cancel-btn:active {
-  background: #f8f8f8;
-  transform: scale(0.96);
-}
-
-/* 输入框占位符样式 */
-.modal-input::placeholder {
-  color: #999;
-  font-weight: 300;
-  padding: 15px;
-}
 
 /* 全局样式重置 */
 
@@ -2861,6 +2838,7 @@ z-index: -1;
 .video-btn img {
   width: 100%;
   height: 100%;
+  filter: invert(1); /* 白色图标 */
 }
 
 .video-btn.end-call {
@@ -2922,7 +2900,7 @@ z-index: -1;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain; /* 保持宽高比 */
+  object-fit: scale-down;
   z-index: 1;
 }
 
@@ -2931,8 +2909,8 @@ z-index: -1;
   position: absolute;
   top: 1px;
   right: 1px;
-  width: 8%;
-  max-width: 40px;
+  width: 14%;
+  max-width: 60px;
   z-index: 10;
   border: 2px solid white;
   border-radius: 0px;
@@ -3037,8 +3015,8 @@ z-index: -1;
 }
 
 .group-video-container {
-  width: 90%;
-  height: 80%;
+  width: 92%;
+  height: 90%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 15px;
@@ -3048,7 +3026,7 @@ z-index: -1;
 .video-item {
   position: relative;
   background: #222;
-  border-radius: 8px;
+  border-radius: 35px;
   overflow: hidden;
   aspect-ratio: 4/3;
 }
@@ -3089,21 +3067,37 @@ z-index: -1;
   left: 0;
   width: 100% !important;
   height: 100% !important;
+  object-fit: scale-down;
   z-index: 1001;
 }
 
 .group-video-controls {
   position: absolute;
-  bottom: 20px;
+  bottom: 8%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 15px;
 }
+.group-video-controls .video-btn {
+  width: 16%;
+  aspect-ratio: 1;
+  max-width: 48px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  z-index: 1002;
+}
+
 /* 确保投屏按钮图标路径正确 */
-.group-video-controls .video-btn.screen-share img {
-  width: 24px;
-  height: 24px;
+.group-video-controls .video-btn.screen-share img .video-btn.toggle-camera img .video-btn.toggle-facing img .video-btn.toggle-mic {
+  width: 100%;
+  height: 100%;
   filter: invert(1); /* 白色图标 */
 }
 
@@ -3112,4 +3106,105 @@ z-index: -1;
   filter: invert(0.5) sepia(1) saturate(5) hue-rotate(175deg); /* 蓝色图标 */
 }
 
+
+
+
+
+
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+.modal-tabs {
+  position: relative;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 20px;
+  user-select: none;
+  height: 48px;
+}
+.slider {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  background: rgba(255, 165, 0, 0.7);
+  backdrop-filter: blur(12px);
+  border-radius: 24px;
+  transition: left 0.3s ease;
+  z-index: 1;
+}
+.tab-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 2;
+}
+.tab-btn.active {
+  color: #fff;
+}
+.tab-btn:not(.active) {
+  color: #333;
+}
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 24px;
+  outline: none;
+  margin-bottom: 16px;
+}
+.modal-actions,
+.group-join {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.modal-btn {
+  padding: 10px 16px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.circle-btn {
+  border-radius: 50%;
+  padding: 10px;
+}
+.confirm-btn {
+  background: #28a745;
+  color: #fff;
+}
+.cancel-btn {
+  background: #dc3545;
+  color: #fff;
+}
+.create-group-btn {
+  background: #007bff;
+  color: #fff;
+}
 </style>
