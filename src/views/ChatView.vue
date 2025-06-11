@@ -762,12 +762,12 @@ const toggleGroupScreenShare = async () => {
   }
 }
 
-// 修改后的处理群视频信号函数
 const handleGroupVideoSignal = async (signal) => {
   console.log('收到群视频信号:', signal);
   
   // 结束通话信号处理
   if (signal.signalType === 'end-call') {
+    console.log(`收到结束通话信号，来自 ${signal.from}`);
     endGroupVideoCall();
     return;
   }
@@ -785,21 +785,22 @@ const handleGroupVideoSignal = async (signal) => {
     console.log(`成员 ${signal.from} 加入群视频`);
     addGroupMember(signal.from);
     
-    // 关键修复：为每个新成员创建连接
-    createPeerConnectionForMember(signal.from, true); // 作为发起者创建连接
+    // 修复：使用正确的参数调用 createPeerConnectionForMember
+    if (signal.from !== userId) {
+      createPeerConnectionForMember(signal.from);
+    }
     return;
   }
   
   // 新成员通知处理
   if (signal.signalType === 'new-member') {
-    console.log(`新成员 ${signal.newMemberId} 加入`);
+    console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`);
     
     // 确保不与自己建立连接
     if (signal.newMemberId !== userId) {
       // 检查是否已存在连接
       if (!groupPeerConnections.value[signal.newMemberId]) {
-        // 关键修复：为非发起者创建连接
-        createPeerConnectionForMember(signal.newMemberId, false);
+        createPeerConnectionForMember(signal.newMemberId);
       }
     }
     
@@ -810,22 +811,26 @@ const handleGroupVideoSignal = async (signal) => {
     return;
   }
   
-  // 信令处理
+  // 信令处理 - 添加候选队列
   if (signal.sdp) {
     const pc = groupPeerConnections.value[signal.from];
     if (!pc) return;
 
     try {
+      // 保存候选队列
       const candidateQueue = pc.candidateQueue || [];
       
+      // 设置远程描述
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
       console.log(`设置${signal.sdp.type}成功`);
       
+      // 处理缓存的候选
       for (const candidate of candidateQueue) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
       pc.candidateQueue = [];
       
+      // 处理offer
       if (signal.sdp.type === 'offer') {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -841,12 +846,14 @@ const handleGroupVideoSignal = async (signal) => {
     return;
   }
   
-  // 处理ICE候选
+  // 处理ICE候选 - 添加队列机制
   if (signal.candidate) {
     const pc = groupPeerConnections.value[signal.from];
     if (!pc) return;
     
+    // 如果远程描述未设置，缓存候选
     if (!pc.remoteDescription) {
+      console.log('缓存候选（远程描述未设置）');
       if (!pc.candidateQueue) pc.candidateQueue = [];
       pc.candidateQueue.push(signal.candidate);
       return;
@@ -854,6 +861,7 @@ const handleGroupVideoSignal = async (signal) => {
     
     try {
       await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      console.log('添加候选成功');
     } catch (error) {
       console.error('添加ICE候选失败:', error);
     }
@@ -865,14 +873,15 @@ const handleGroupVideoSignal = async (signal) => {
 
 
 
-// 修改后的群视频通话加入处理函数
+// 加入群视频通话
+// 修复加入群视频通话
 const joinGroupVideoCall = async (groupId, initiatorId) => {
   try {
     console.log(`加入群视频: ${groupId}, 发起者: ${initiatorId}`)
     groupVideoCallModal.value = true
     groupCallMembers.value = [userId]
     
-    // 获取媒体流
+    // 获取媒体流 - 确保只获取一次
     if (!groupLocalStream.value) {
       const constraints = { 
         video: { facingMode: groupFacingMode.value },
@@ -884,15 +893,17 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
       groupMicEnabled.value = true
     }
     
-    // 显示本地视频
+    // 显示本地视频 - 确保视频元素存在
     nextTick(() => {
       if (groupLocalVideo.value && groupLocalStream.value) {
         groupLocalVideo.value.srcObject = groupLocalStream.value;
         groupLocalVideo.value.muted = true;
         
+        // 增强播放处理
         const playWithFallback = () => {
           groupLocalVideo.value.play().catch(e => {
             console.error('本地视频播放失败:', e);
+            // 添加用户交互解决自动播放
             const playButton = document.createElement('button');
             playButton.className = 'video-play-button';
             playButton.textContent = '点击播放';
@@ -903,6 +914,7 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
           });
         };
         
+        // 延迟播放避免冲突
         setTimeout(playWithFallback, 300);
       }
     });
@@ -916,9 +928,27 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
     })
     
     // 创建与发起者的连接
-    createPeerConnectionForMember(initiatorId, true) // 添加第二个参数表示是发起者
+    createPeerConnectionForMember(initiatorId)
+        // 创建与所有现有成员的连接（包括其他非发起者成员）
+    groupCallMembers.value.forEach(memberId => {
+      if (memberId !== userId) {
+        createPeerConnectionForMember(memberId);
+      }
+    });
     
-    // 关键修复：通知所有成员有新用户加入
+    // 如果是发起者，通知其他成员有新成员加入
+    if (isGroupCallInitiator()) {
+      groupCallMembers.value.forEach(memberId => {
+        if (memberId !== userId && memberId !== initiatorId) {
+          sendGroupVideoSignal({
+            signalType: 'new-member',
+            to: memberId,
+            newMemberId: userId
+          })
+        }
+      })
+    }
+    // 通知所有成员有新用户加入（包括其他参与者）
     groupCallMembers.value.forEach(memberId => {
       if (memberId !== userId) {
         sendGroupVideoSignal({
@@ -928,6 +958,13 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
         });
       }
     });
+    
+    // 创建与所有现有成员的连接
+    groupCallMembers.value.forEach(memberId => {
+      if (memberId !== userId) {
+        createPeerConnectionForMember(memberId);
+      }
+    });
   } catch (error) {
     console.error('加入群视频失败:', error)
     alert(`加入群视频错误: ${error.message}`)
@@ -935,9 +972,9 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
   }
 }
 
-// 修改后的创建PeerConnection方法
-const createPeerConnectionForMember = (memberId, isInitiator = false) => {
-  console.log(`为成员 ${memberId} 创建PeerConnection, 发起者: ${isInitiator}`);
+// 修复PeerConnection创建方法
+const createPeerConnectionForMember = (memberId) => {
+  console.log(`为成员 ${memberId} 创建PeerConnection`);
   
   // 如果已存在连接，先关闭
   if (groupPeerConnections.value[memberId]) {
@@ -949,31 +986,46 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { 
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      {
         urls: "turn:global.relay.metered.ca:80",
         username: "f1b294a9e6d3a1c522e46c1d",
         credential: "5VYADY2pNp8YTM0R"
+      },
+      {
+        urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+        username: "webrtc",
+        credential: "webrtc"
       }
     ],
-    iceTransportPolicy: 'all'
+    iceTransportPolicy: 'all' // 改为all提高连接成功率
   });
   
   // 初始化候选队列
   pc.candidateQueue = [];
   
-  // 添加本地轨道
+  // 添加本地轨道 - 确保只添加一次
   if (groupLocalStream.value) {
+    const existingTracks = pc.getSenders().map(s => s.track);
     groupLocalStream.value.getTracks().forEach(track => {
-      pc.addTrack(track, groupLocalStream.value);
+      if (!existingTracks.includes(track)) {
+        pc.addTrack(track, groupLocalStream.value);
+      }
     });
   }
   
-  // 处理远程轨道
+  // 处理远程轨道 - 修复流分配
   pc.ontrack = (event) => {
     console.log(`收到来自 ${memberId} 的远程轨道`);
     
+    // 确保使用第一个有效流
     const stream = event.streams[0];
     if (!stream) return;
     
+    // 更新或创建流
     groupRemoteStreams.value[memberId] = stream;
     
     nextTick(() => {
@@ -982,6 +1034,7 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
         videoEl.srcObject = stream;
         videoEl.play().catch(e => {
           console.error('播放失败:', e);
+          // 添加播放按钮解决自动播放问题
           const playButton = document.createElement('button');
           playButton.className = 'video-play-button';
           playButton.textContent = '点击播放';
@@ -997,11 +1050,14 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
   // ICE候选处理
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      sendGroupVideoSignal({
-        signalType: 'candidate',
-        to: memberId,
-        candidate: event.candidate
-      });
+      // 只在收集阶段发送候选
+      if (pc.iceGatheringState === 'gathering') {
+        sendGroupVideoSignal({
+          signalType: 'candidate',
+          to: memberId,
+          candidate: event.candidate
+        });
+      }
     }
   };
   
@@ -1009,25 +1065,31 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
   pc.onconnectionstatechange = () => {
     console.log(`与 ${memberId} 的连接状态: ${pc.connectionState}`);
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      console.log(`连接断开，关闭与 ${memberId} 的PeerConnection`);
+      
+      // 延迟关闭避免立即重连冲突
       setTimeout(() => {
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
           pc.close();
           delete groupPeerConnections.value[memberId];
           delete groupRemoteStreams.value[memberId];
         }
-      }, 5000);
+      }, 5000); // 5秒后关闭
     }
   };
   
-  // ICE连接状态监控
+  // 添加ICE连接状态监控
   pc.oniceconnectionstatechange = () => {
     const iceState = pc.iceConnectionState;
     console.log(`ICE状态变化: ${iceState} (${memberId})`);
     
+    // 增强重连逻辑
     if (iceState === 'disconnected' || iceState === 'failed') {
+      console.log(`连接断开，10秒后重连 ${memberId}`);
       setTimeout(() => {
         if (!groupPeerConnections.value[memberId]) {
-          createPeerConnectionForMember(memberId, isInitiator);
+          console.log(`执行重连: ${memberId}`);
+          createPeerConnectionForMember(memberId);
         }
       }, 10000);
     }
@@ -1036,8 +1098,13 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
   // 保存连接
   groupPeerConnections.value[memberId] = pc;
   
-  // 关键修复：只有发起者才主动创建offer
-  if (isInitiator) {
+  // 判断是否需要创建offer：使用确定性规则避免冲突
+  const shouldCreateOffer = () => {
+    // 规则：当前用户ID < 对方ID时创建offer
+    return userId.localeCompare(memberId) < 0;
+  };
+
+  if (shouldCreateOffer()) {
     console.log('作为主动方，创建offer...');
     setTimeout(() => {
       if (pc.signalingState === 'stable') {
@@ -1055,7 +1122,7 @@ const createPeerConnectionForMember = (memberId, isInitiator = false) => {
         })
         .catch(console.error);
       }
-    }, Math.random() * 1000);
+    }, Math.random() * 1000); // 随机延迟
   }
 };
 
