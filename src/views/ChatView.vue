@@ -710,33 +710,27 @@ const handleGroupVideoSignal = async (signal) => {
     return;
   }
   
-  // 信令处理
+  // 信令处理 - 添加候选队列
   if (signal.sdp) {
     const pc = groupPeerConnections.value[signal.from];
     if (!pc) return;
 
     try {
-      // 增强状态检查
-      const currentState = pc.signalingState;
-      const isOffer = signal.sdp.type === 'offer';
-      const isAnswer = signal.sdp.type === 'answer';
-      
-      // 状态兼容性检查
-      if (isOffer && currentState !== 'stable') {
-        console.warn(`收到offer但状态为${currentState}，跳过`);
-        return;
-      }
-      
-      if (isAnswer && currentState !== 'have-local-offer') {
-        console.warn(`收到answer但状态为${currentState}，跳过`);
-        return;
-      }
+      // 保存候选队列
+      const candidateQueue = pc.candidateQueue || [];
       
       // 设置远程描述
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      console.log(`设置${signal.sdp.type}成功`);
+      
+      // 处理缓存的候选
+      for (const candidate of candidateQueue) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+      pc.candidateQueue = [];
       
       // 处理offer
-      if (isOffer) {
+      if (signal.sdp.type === 'offer') {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         sendGroupVideoSignal({
@@ -747,30 +741,29 @@ const handleGroupVideoSignal = async (signal) => {
       }
     } catch (error) {
       console.error('SDP处理失败:', error);
-      // 错误时重建连接
-      if (error.toString().includes('InvalidStateError')) {
-        createPeerConnectionForMember(signal.from);
-      }
     }
+    return;
   }
   
-  // 处理ICE候选
+  // 处理ICE候选 - 添加队列机制
   if (signal.candidate) {
-    const pc = groupPeerConnections.value[signal.from]
-    if (pc) {
-      try {
-        // 添加候选前检查连接状态
-        if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-          console.log(`连接状态为${pc.iceConnectionState}，跳过添加候选`)
-          return
-        }
-        
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
-      } catch (error) {
-        console.error('添加ICE候选失败:', error)
-      }
+    const pc = groupPeerConnections.value[signal.from];
+    if (!pc) return;
+    
+    // 如果远程描述未设置，缓存候选
+    if (!pc.remoteDescription) {
+      console.log('缓存候选（远程描述未设置）');
+      if (!pc.candidateQueue) pc.candidateQueue = [];
+      pc.candidateQueue.push(signal.candidate);
+      return;
     }
-    return
+    
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      console.log('添加候选成功');
+    } catch (error) {
+      console.error('添加ICE候选失败:', error);
+    }
   }
 }
 
@@ -943,7 +936,8 @@ const createPeerConnectionForMember = (memberId) => {
     console.log(`信令状态: ${pc.signalingState} (${memberId})`)
   }
   // ==================== 结束增强代码 ====================
-  
+    // 初始化候选队列
+  pc.candidateQueue = [];
   // 添加本地轨道 - 确保只添加一次
   if (groupLocalStream.value) {
     const existingTracks = pc.getSenders().map(s => s.track)
