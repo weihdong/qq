@@ -39,45 +39,53 @@
     </div>
 
     <!-- 添加好友弹窗 -->
-    <div v-if="showAddFriendModal" class="modal-mask" @click.self="toggleAddFriend">
+    <!-- 添加好友弹窗 -->
+    <div v-if="showAddFriendModal" class="modal-mask">
       <div class="modal">
-        <div class="modal-tabs" ref="tabsRef" @mousedown="onDragStart" @mousemove="onDragMove" @mouseup="onDragEnd">
-          <!-- 滑块 -->
-          <div class="slider" :style="sliderStyle"></div>
-          <!-- 标签按钮 -->
-          <button class="tab-btn" :class="{ active: activeTab === 'friend' }" @click="switchTab('friend')">好友</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'group' }" @click="switchTab('group')">群聊</button>
+        <div class="modal-tabs" ref="tabsContainer">
+          <div class="tabs-background"></div>
+          <button :class="['tab-btn', { active: activeTab === 'friend' }]" @click="activeTab = 'friend'">好友</button>
+          <button :class="['tab-btn', { active: activeTab === 'group' }]" @click="activeTab = 'group'">群聊</button>
+          <div class="slider" ref="slider" 
+               @mousedown="startDrag"
+               @touchstart="startDrag"></div>
         </div>
+        
         <!-- 添加好友 -->
-        <div v-if="activeTab === 'friend'" class="tab-content">
-          <div class="input-actions">
+        <div v-if="activeTab === 'friend'" class="friend-section">
+          <div class="input-row">
             <input 
               v-model="newFriendName" 
               placeholder="输入用户名"
               class="modal-input"
-            />
-            <div class="modal-actions">
-              <button class="modal-btn circle-btn confirm-btn" @click="addFriend"></button>
-              <button class="modal-btn circle-btn cancel-btn" @click="toggleAddFriend"></button>
+            >
+            <div class="action-buttons">
+              <button class="modal-btn confirm-btn" @click="addFriend" title="添加"></button>
+              <button class="modal-btn cancel-btn" @click="toggleAddFriend" title="取消"></button>
             </div>
           </div>
         </div>
+        
         <!-- 群聊功能 -->
-        <div v-else class="tab-content">
-          <div class="input-actions">
+        <div v-if="activeTab === 'group'" class="group-section">
+          <div class="create-group-row">
+            <button class="modal-btn create-group-btn" @click="createGroup" title="创建群聊"></button>
+          </div>
+          <div class="input-row">
             <input 
               v-model="groupCodeToJoin" 
               placeholder="输入群号"
               class="modal-input"
-            />
-            <div class="modal-actions">
-              <button class="modal-btn circle-btn create-group-btn" @click="createGroup"></button>
-              <button class="modal-btn circle-btn cancel-btn" @click="toggleAddFriend"></button>
-            </div>
+            >
+            <button class="modal-btn join-group-btn" @click="joinGroup" title="加入群聊"></button>
+          </div>
+          <div class="cancel-row">
+            <button class="modal-btn cancel-btn" @click="toggleAddFriend" title="取消"></button>
           </div>
         </div>
       </div>
     </div>
+
     <!-- 聊天区域 -->
     <div class="chat-area" ref="chatArea">
       <!-- 群聊标题 -->
@@ -352,64 +360,73 @@ const fullscreenUserId = ref(null)
 const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
 
-
-// 滑块状态
-const tabsRef = ref(null)
-const sliderLeft = ref(0)
+// 新增滑块相关变量
+const slider = ref(null)
+const tabsContainer = ref(null)
 const isDragging = ref(false)
-
-const sliderStyle = computed(() => ({
-  left: sliderLeft.value + 'px',
-}))
+const startX = ref(0)
+const startLeft = ref(0)
 
 // 更新滑块位置
 const updateSliderPosition = () => {
-  const tabsEl = tabsRef.value
-  if (!tabsEl) return
-  const btns = tabsEl.querySelectorAll('.tab-btn')
-  const index = activeTab.value === 'friend' ? 0 : 1
-  const targetBtn = btns[index]
-  sliderLeft.value = targetBtn.offsetLeft
+  if (slider.value && tabsContainer.value) {
+    const tabWidth = tabsContainer.value.offsetWidth / 2
+    slider.value.style.transform = `translateX(${activeTab.value === 'friend' ? 0 : tabWidth}px)`
+  }
 }
 
-// 切换标签
-const switchTab = (tab) => {
-  activeTab.value = tab
-  updateSliderPosition()
-}
+// 在activeTab变化时更新滑块位置
+watch(activeTab, updateSliderPosition)
 
-// 拖动逻辑
-const onDragStart = (e) => {
-  const sliderEl = e.target.closest('.slider')
-  if (!sliderEl) return
-  isDragging.value = true
-  e.preventDefault()
-}
-
-const onDragMove = (e) => {
-  if (!isDragging.value) return
-  const tabsEl = tabsRef.value
-  const rect = tabsEl.getBoundingClientRect()
-  let x = e.clientX - rect.left
-  x = Math.max(0, Math.min(x, rect.width - rect.height)) // 限制在范围内
-  sliderLeft.value = x
-}
-
-const onDragEnd = () => {
-  if (!isDragging.value) return
-  isDragging.value = false
-  const tabsEl = tabsRef.value
-  const rect = tabsEl.getBoundingClientRect()
-  const mid = rect.width / 2
-  switchTab(sliderLeft.value < mid ? 'friend' : 'group') // 根据滑块位置切换标签
-}
 onMounted(() => {
   updateSliderPosition()
 })
 
-onBeforeUnmount(() => {
+// 开始拖动
+const startDrag = (e) => {
+  isDragging.value = true
+  startX.value = e.clientX || e.touches[0].clientX
+  startLeft.value = activeTab.value === 'friend' ? 0 : tabsContainer.value.offsetWidth / 2
+  
+  // 添加事件监听
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+  document.addEventListener('touchmove', onDrag)
+  document.addEventListener('touchend', stopDrag)
+}
+
+// 拖动中
+const onDrag = (e) => {
+  if (!isDragging.value) return
+  const currentX = e.clientX || e.touches[0].clientX
+  const deltaX = currentX - startX.value
+  const tabWidth = tabsContainer.value.offsetWidth / 2
+  
+  // 计算新的位置
+  let newLeft = startLeft.value + deltaX
+  newLeft = Math.max(0, Math.min(tabWidth, newLeft))
+  
+  // 更新滑块位置
+  slider.value.style.transform = `translateX(${newLeft}px)`
+}
+
+// 停止拖动
+const stopDrag = () => {
+  if (!isDragging.value) return
   isDragging.value = false
-})
+  
+  // 移除事件监听
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('touchmove', onDrag)
+  document.removeEventListener('touchend', stopDrag)
+  
+  // 根据滑块位置决定切换到哪个tab
+  const tabWidth = tabsContainer.value.offsetWidth / 2
+  const currentPosition = parseFloat(slider.value.style.transform.split('(')[1]) || 0
+  activeTab.value = currentPosition >= tabWidth / 2 ? 'group' : 'friend'
+}
+
 // 添加视频元素引用管理
 const groupLocalVideo = ref(null)
 const remoteVideoRefs = ref({})
@@ -3117,110 +3134,218 @@ z-index: -1;
 
 
 
+/* 模态框遮罩层 - 添加模糊效果 */
 .modal-mask {
   position: fixed;
+  z-index: 9998;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.3s ease;
+}
+
+/* 模态框主体 */
+.modal {
+  width: 320px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 标签页容器 */
+.modal-tabs {
+  position: relative;
+  display: flex;
+  margin-bottom: 24px;
+  height: 48px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #ff7b00;
+}
+
+/* 标签页背景 */
+.tabs-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #ff7b00;
+  z-index: 0;
+}
+
+/* 标签按钮 */
+.tab-btn {
+  flex: 1;
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.tab-btn.active {
+  color: white;
+}
+
+/* 液态玻璃滑块 */
+.slider {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 8px);
+  height: calc(100% - 8px);
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  z-index: 1;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* 输入行样式 */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* 输入框样式 */
+.modal-input {
+  flex: 1;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 24px;
+  font-size: 16px;
+  transition: border-color 0.3s;
+}
+
+.modal-input:focus {
+  border-color: #ff7b00;
+  outline: none;
+}
+
+/* 按钮基础样式 */
+.modal-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-}
-.modal {
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  width: 360px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s;
   position: relative;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
-.modal-tabs {
-  position: relative;
-  background: rgba(255, 165, 0, 0.5); /* 橘色背景 */
-  border-radius: 24px;
-  overflow: hidden;
-  display: flex;
-  margin-bottom: 20px;
-  user-select: none;
-  height: 48px;
-}
-.slider {
+
+/* 按钮伪元素 - 替代文字 */
+.modal-btn::after {
+  content: "";
   position: absolute;
-  top: 0;
-  width: 50%;
-  height: 100%;
-  background: rgba(255, 165, 0, 0.6); /* 半透明橘色液态玻璃 */
-  backdrop-filter: blur(12px);
-  border-radius: 24px;
-  transition: left 0.3s ease;
-  z-index: 1;
+  width: 24px;
+  height: 24px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
 }
-.tab-btn {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  z-index: 2;
+
+/* 确认/添加按钮 */
+.confirm-btn {
+  background: #4CAF50;
 }
-.tab-btn.active {
-  color: #fff;
+
+.confirm-btn::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
 }
-.tab-btn:not(.active) {
-  color: #333;
+
+/* 取消按钮 */
+.cancel-btn {
+  background: #f44336;
 }
-.modal-input {
+
+.cancel-btn::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E");
+}
+
+/* 创建群聊按钮 */
+.create-group-btn {
+  background: #2196F3;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ccc;
   border-radius: 24px;
-  outline: none;
   margin-bottom: 16px;
 }
-.input-actions {
+
+.create-group-btn::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V18c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05.02.01.03.03.04.04 1.14.83 1.93 1.94 1.93 3.41V18c0 .35-.07.69-.21 1H21c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5z'/%3E%3C/svg%3E");
+}
+
+/* 加入群聊按钮 */
+.join-group-btn {
+  background: #9C27B0;
+}
+
+.join-group-btn::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/%3E%3C/svg%3E");
+}
+
+/* 按钮悬停效果 */
+.modal-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 创建群聊行 */
+.create-group-row {
   display: flex;
-  gap: 16px;
-  align-items: center;
+  justify-content: center;
   margin-bottom: 16px;
 }
-.modal-actions {
+
+/* 取消按钮行 */
+.cancel-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* 操作按钮容器 */
+.action-buttons {
   display: flex;
   gap: 12px;
-  align-items: center;
 }
-.modal-btn {
-  padding: 10px;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-.circle-btn {
-  border-radius: 50%; /* 完全圆形 */
-  width: 40px;
-  height: 40px;
-  padding: 0;
-}
-.confirm-btn {
-  background: #28a745;
-  color: #fff;
-}
-.cancel-btn {
-  background: #dc3545;
-  color: #fff;
-}
-.create-group-btn {
-  background: #007bff;
-  color: #fff;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  padding: 0;
+
+/* 响应式调整 */
+@media (max-width: 480px) {
+  .modal {
+    width: 90%;
+    padding: 16px;
+  }
+  
+  .input-row {
+    flex-direction: column;
+  }
+  
+  .modal-btn {
+    width: 100%;
+    border-radius: 24px;
+    height: 44px;
+  }
 }
 </style>
