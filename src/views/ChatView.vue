@@ -56,6 +56,9 @@
         
         <!-- 添加好友 -->
         <div v-if="activeTab === 'friend'" class="friend-section">
+          <div class="create-group-row">
+            <button class="modal-btn create-group-btn" title="higo">oochat 5.0</button>
+          </div>
           <div class="input-row">
             <input 
               v-model="newFriendName" 
@@ -64,9 +67,7 @@
             >
             <div class="action-buttons">
               <button class="modal-btn confirm-btn" @click="addFriend" title="添加"></button>
-              <button class="modal-btn cancel-btn" @click="toggleAddFriend" title="取消"></button>
             </div>
-            <br>
           </div>
         </div>
         
@@ -3154,8 +3155,9 @@ z-index: -1;
 /* 模态框主体 */
 .modal {
   width: 78%;
+  max-width: 280px;
   background: white;
-  border-radius: 16px;
+  border-radius: 40px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   padding: 24px;
   position: relative;
@@ -3230,9 +3232,10 @@ z-index: -1;
 .modal-input {
   flex: 1;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 -16px;
+  padding-left: 16px;
   border: 1px solid #e0e0e0;
-  border-radius: 24px;
+  border-radius: 44px;
   font-size: 16px;
   transition: border-color 0.3s;
 }
@@ -3288,7 +3291,7 @@ z-index: -1;
 
 /* 创建群聊按钮 */
 .create-group-btn {
-  background: rgb(212, 163, 73);
+  background: rgb(186, 121, 0);
   width: 100%;
   border-radius: 24px;
   margin-bottom: 16px;
