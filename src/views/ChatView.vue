@@ -39,7 +39,6 @@
     </div>
 
     <!-- 添加好友弹窗 -->
-    <!-- 添加好友弹窗 -->
     <div v-if="showAddFriendModal" class="modal-mask" @click.self="toggleAddFriend">
       <div class="modal">
         <div class="modal-tabs" ref="tabsRef" @mousedown="onDragStart" @mousemove="onDragMove" @mouseup="onDragEnd">
@@ -51,32 +50,34 @@
         </div>
         <!-- 添加好友 -->
         <div v-if="activeTab === 'friend'" class="tab-content">
-          <input 
-            v-model="newFriendName" 
-            placeholder="输入用户名"
-            class="modal-input"
-          />
-          <div class="modal-actions">
-            <button class="modal-btn ellipse-btn confirm-btn" @click="addFriend">添加</button>
-            <button class="modal-btn ellipse-btn cancel-btn" @click="toggleAddFriend">取消</button>
+          <div class="input-actions">
+            <input 
+              v-model="newFriendName" 
+              placeholder="输入用户名"
+              class="modal-input"
+            />
+            <div class="modal-actions">
+              <button class="modal-btn circle-btn confirm-btn" @click="addFriend"></button>
+              <button class="modal-btn circle-btn cancel-btn" @click="toggleAddFriend"></button>
+            </div>
           </div>
         </div>
         <!-- 群聊功能 -->
         <div v-else class="tab-content">
-          <button class="modal-btn ellipse-btn create-group-btn" @click="createGroup">创建群聊</button>
-          <div class="group-join">
+          <div class="input-actions">
             <input 
               v-model="groupCodeToJoin" 
               placeholder="输入群号"
               class="modal-input"
             />
-            <button class="modal-btn ellipse-btn join-group-btn" @click="joinGroup">加入群聊</button>
+            <div class="modal-actions">
+              <button class="modal-btn circle-btn create-group-btn" @click="createGroup"></button>
+              <button class="modal-btn circle-btn cancel-btn" @click="toggleAddFriend"></button>
+            </div>
           </div>
-          <button class="modal-btn ellipse-btn cancel-btn" @click="toggleAddFriend">取消</button>
         </div>
       </div>
     </div>
-
     <!-- 聊天区域 -->
     <div class="chat-area" ref="chatArea">
       <!-- 群聊标题 -->
@@ -352,14 +353,14 @@ const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
 
 
-// Slider state
-const tabsRef = ref(null);
-const sliderLeft = ref(0);
-const isDragging = ref(false);
+// 滑块状态
+const tabsRef = ref(null)
+const sliderLeft = ref(0)
+const isDragging = ref(false)
 
 const sliderStyle = computed(() => ({
   left: sliderLeft.value + 'px',
-}));
+}))
 
 // 更新滑块位置
 const updateSliderPosition = () => {
@@ -3139,7 +3140,7 @@ z-index: -1;
 }
 .modal-tabs {
   position: relative;
-  background: rgba(255, 165, 0, 0.6); /* 橘色背景 */
+  background: rgba(255, 165, 0, 0.5); /* 橘色背景 */
   border-radius: 24px;
   overflow: hidden;
   display: flex;
@@ -3152,7 +3153,7 @@ z-index: -1;
   top: 0;
   width: 50%;
   height: 100%;
-  background: rgba(255, 165, 0, 0.7); /* 橘色液态玻璃 */
+  background: rgba(255, 165, 0, 0.6); /* 半透明橘色液态玻璃 */
   backdrop-filter: blur(12px);
   border-radius: 24px;
   transition: left 0.3s ease;
@@ -3181,24 +3182,30 @@ z-index: -1;
   outline: none;
   margin-bottom: 16px;
 }
-.modal-actions,
-.group-join {
+.input-actions {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   margin-bottom: 16px;
 }
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
 .modal-btn {
-  padding: 10px 16px;
+  padding: 10px;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-.ellipse-btn {
-  border-radius: 30px; /* 按钮椭圆形 */
-  padding: 10px 20px;
+.circle-btn {
+  border-radius: 50%; /* 完全圆形 */
+  width: 40px;
+  height: 40px;
+  padding: 0;
 }
 .confirm-btn {
   background: #28a745;
@@ -3211,5 +3218,9 @@ z-index: -1;
 .create-group-btn {
   background: #007bff;
   color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  padding: 0;
 }
 </style>
