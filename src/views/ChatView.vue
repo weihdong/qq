@@ -39,6 +39,7 @@
     </div>
 
     <!-- 添加好友弹窗 -->
+    <!-- 添加好友弹窗 -->
     <div v-if="showAddFriendModal" class="modal-mask" @click.self="toggleAddFriend">
       <div class="modal">
         <div class="modal-tabs" ref="tabsRef" @mousedown="onDragStart" @mousemove="onDragMove" @mouseup="onDragEnd">
@@ -56,26 +57,25 @@
             class="modal-input"
           />
           <div class="modal-actions">
-            <button class="modal-btn circle-btn" @click="addFriend">添加</button>
-            <button class="modal-btn circle-btn" @click="toggleAddFriend">取消</button>
+            <button class="modal-btn ellipse-btn confirm-btn" @click="addFriend">添加</button>
+            <button class="modal-btn ellipse-btn cancel-btn" @click="toggleAddFriend">取消</button>
           </div>
         </div>
         <!-- 群聊功能 -->
         <div v-else class="tab-content">
-          <button class="modal-btn create-group-btn circle-btn" @click="createGroup">创建群聊</button>
+          <button class="modal-btn ellipse-btn create-group-btn" @click="createGroup">创建群聊</button>
           <div class="group-join">
             <input 
               v-model="groupCodeToJoin" 
               placeholder="输入群号"
               class="modal-input"
             />
-            <button class="modal-btn circle-btn" @click="joinGroup">加入群聊</button>
+            <button class="modal-btn ellipse-btn join-group-btn" @click="joinGroup">加入群聊</button>
           </div>
-          <button class="modal-btn circle-btn" @click="toggleAddFriend">取消</button>
+          <button class="modal-btn ellipse-btn cancel-btn" @click="toggleAddFriend">取消</button>
         </div>
       </div>
     </div>
-
 
     <!-- 聊天区域 -->
     <div class="chat-area" ref="chatArea">
@@ -361,49 +361,54 @@ const sliderStyle = computed(() => ({
   left: sliderLeft.value + 'px',
 }));
 
+// 更新滑块位置
 const updateSliderPosition = () => {
-  const tabsEl = tabsRef.value;
-  if (!tabsEl) return;
-  const btns = tabsEl.querySelectorAll('.tab-btn');
-  const index = activeTab.value === 'friend' ? 0 : 1;
-  const targetBtn = btns[index];
-  sliderLeft.value = targetBtn.offsetLeft;
-};
+  const tabsEl = tabsRef.value
+  if (!tabsEl) return
+  const btns = tabsEl.querySelectorAll('.tab-btn')
+  const index = activeTab.value === 'friend' ? 0 : 1
+  const targetBtn = btns[index]
+  sliderLeft.value = targetBtn.offsetLeft
+}
 
+// 切换标签
 const switchTab = (tab) => {
-  activeTab.value = tab;
-  updateSliderPosition();
-};
+  activeTab.value = tab
+  updateSliderPosition()
+}
 
-// Drag handlers
+// 拖动逻辑
 const onDragStart = (e) => {
-  // Only start if clicked on slider area
-  const sliderEl = e.target.closest('.slider');
-  if (!sliderEl) return;
-  isDragging.value = true;
-  e.preventDefault();
-};
+  const sliderEl = e.target.closest('.slider')
+  if (!sliderEl) return
+  isDragging.value = true
+  e.preventDefault()
+}
 
 const onDragMove = (e) => {
-  if (!isDragging.value) return;
-  const tabsEl = tabsRef.value;
-  const rect = tabsEl.getBoundingClientRect();
-  let x = e.clientX - rect.left;
-  // clamp x between 0 and tabs width-button width
-  x = Math.max(0, Math.min(x, rect.width - rect.height));
-  sliderLeft.value = x;
-};
+  if (!isDragging.value) return
+  const tabsEl = tabsRef.value
+  const rect = tabsEl.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  x = Math.max(0, Math.min(x, rect.width - rect.height)) // 限制在范围内
+  sliderLeft.value = x
+}
 
 const onDragEnd = () => {
-  if (!isDragging.value) return;
-  isDragging.value = false;
-  const tabsEl = tabsRef.value;
-  const rect = tabsEl.getBoundingClientRect();
-  const mid = rect.width / 2;
-  // decide tab based on center
-  switchTab(sliderLeft.value < mid ? 'friend' : 'group');
-};
+  if (!isDragging.value) return
+  isDragging.value = false
+  const tabsEl = tabsRef.value
+  const rect = tabsEl.getBoundingClientRect()
+  const mid = rect.width / 2
+  switchTab(sliderLeft.value < mid ? 'friend' : 'group') // 根据滑块位置切换标签
+}
+onMounted(() => {
+  updateSliderPosition()
+})
 
+onBeforeUnmount(() => {
+  isDragging.value = false
+})
 // 添加视频元素引用管理
 const groupLocalVideo = ref(null)
 const remoteVideoRefs = ref({})
@@ -3134,7 +3139,7 @@ z-index: -1;
 }
 .modal-tabs {
   position: relative;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 165, 0, 0.6); /* 橘色背景 */
   border-radius: 24px;
   overflow: hidden;
   display: flex;
@@ -3147,7 +3152,7 @@ z-index: -1;
   top: 0;
   width: 50%;
   height: 100%;
-  background: rgba(255, 165, 0, 0.7);
+  background: rgba(255, 165, 0, 0.7); /* 橘色液态玻璃 */
   backdrop-filter: blur(12px);
   border-radius: 24px;
   transition: left 0.3s ease;
@@ -3191,9 +3196,9 @@ z-index: -1;
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-.circle-btn {
-  border-radius: 50%;
-  padding: 10px;
+.ellipse-btn {
+  border-radius: 30px; /* 按钮椭圆形 */
+  padding: 10px 20px;
 }
 .confirm-btn {
   background: #28a745;
