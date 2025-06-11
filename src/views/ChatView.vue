@@ -718,38 +718,41 @@ const handleGroupVideoSignal = async (signal) => {
     return
   }
   
-  // 加入通知
+  // 成员加入处理
   if (signal.signalType === 'join') {
-    console.log(`成员 ${signal.userId} 加入群视频`)
-    addGroupMember(signal.userId)
+    console.log(`成员 ${signal.from} 加入群视频`);
+    addGroupMember(signal.from);
     
-    // 如果是发起者，创建连接
-    if (isGroupCallInitiator()) {
-      // 添加延迟避免多人同时连接冲突
-      setTimeout(() => {
-        createPeerConnectionForMember(signal.userId)
-      }, Math.random() * 1000) // 随机延迟0-1秒
+    // 所有成员都需要为新成员创建连接（包括非发起者）
+    if (signal.from !== userId && !groupPeerConnections.value[signal.from]) {
+      createPeerConnectionForMember(signal.from);
     }
-    return
+    
+    // 如果是发起者，通知其他成员有新成员加入
+    if (isGroupCallInitiator()) {
+      groupCallMembers.value.forEach(memberId => {
+        if (memberId !== userId && memberId !== signal.from) {
+          sendGroupVideoSignal({
+            signalType: 'new-member',
+            to: memberId,
+            newMemberId: signal.from
+          });
+        }
+      });
+    }
   }
   
   // 新成员通知处理
   if (signal.signalType === 'new-member') {
     console.log(`新成员 ${signal.newMemberId} 加入，需要创建连接`);
-    
-    // 确保不与自己建立连接
-    if (signal.newMemberId !== userId) {
-      // 检查是否已存在连接
-      if (!groupPeerConnections.value[signal.newMemberId]) {
-        createPeerConnectionForMember(signal.newMemberId);
-      }
+    if (signal.newMemberId !== userId && !groupPeerConnections.value[signal.newMemberId]) {
+      createPeerConnectionForMember(signal.newMemberId);
     }
     
     // 更新成员列表
     if (!groupCallMembers.value.includes(signal.newMemberId)) {
       groupCallMembers.value.push(signal.newMemberId);
     }
-    return;
   }
   
   // 信令处理 - 添加候选队列
@@ -916,7 +919,8 @@ const joinGroupVideoCall = async (groupId, initiatorId) => {
 // 修复PeerConnection创建方法
 const createPeerConnectionForMember = (memberId) => {
   console.log(`为成员 ${memberId} 创建PeerConnection`)
-  
+  // 防止与自己创建连接
+  if (memberId === userId) return;
   // 如果已存在连接，先关闭
   if (groupPeerConnections.value[memberId]) {
     groupPeerConnections.value[memberId].close()
@@ -1008,7 +1012,7 @@ const createPeerConnectionForMember = (memberId) => {
   }
   
   // 处理远程轨道 - 修复流分配
-  // 修改ontrack事件处理
+  // 在createPeerConnectionForMember函数中
   pc.ontrack = (event) => {
     console.log(`收到来自 ${memberId} 的远程轨道`);
     
@@ -1021,11 +1025,11 @@ const createPeerConnectionForMember = (memberId) => {
     
     nextTick(() => {
       const videoEl = remoteVideoRefs.value[memberId];
-      if (videoEl) {
+      if (videoEl && videoEl.srcObject !== stream) {
         videoEl.srcObject = stream;
         videoEl.play().catch(e => {
           console.error('播放失败:', e);
-          // 添加播放按钮解决自动播放问题
+          // 添加用户交互解决自动播放
           const playButton = document.createElement('button');
           playButton.className = 'video-play-button';
           playButton.textContent = '点击播放';
@@ -1037,22 +1041,17 @@ const createPeerConnectionForMember = (memberId) => {
       }
     });
   };
-
-  
-  // ICE候选处理
+  // 在createPeerConnectionForMember函数中
   pc.onicecandidate = (event) => {
-  if (event.candidate) {
-    // 只在收集阶段发送候选
-    if (pc.iceGatheringState === 'gathering') {
+    if (event.candidate) {
+      // 立即发送候选，不等待收集完成
       sendGroupVideoSignal({
         signalType: 'candidate',
         to: memberId,
         candidate: event.candidate
       });
     }
-  }
-};
-  
+  };
   // 连接状态处理
   pc.onconnectionstatechange = () => {
     console.log(`与 ${memberId} 的连接状态: ${pc.connectionState}`)
@@ -1069,37 +1068,38 @@ const createPeerConnectionForMember = (memberId) => {
       }, 5000) // 5秒后关闭
     }
   }
-  
   // 保存连接
   groupPeerConnections.value[memberId] = pc
-  
   // 判断是否需要创建offer：使用确定性规则避免冲突
+  // 修改offer创建规则 - 总是由后加入的成员创建offer
   const shouldCreateOffer = () => {
-    // 规则：当前用户ID < 对方ID时创建offer
-    return userId.localeCompare(memberId) < 0;
+    // 规则：当前用户加入时间晚于对方时创建offer
+    const myIndex = groupCallMembers.value.indexOf(userId);
+    const theirIndex = groupCallMembers.value.indexOf(memberId);
+    return myIndex > theirIndex;
   };
 
+  // 立即尝试创建offer
   if (shouldCreateOffer()) {
-    console.log('作为主动方，创建offer...')
-    setTimeout(() => {
-      if (pc.signalingState === 'stable') {
-        pc.createOffer({
+    console.log('作为后加入方，创建offer...');
+    setTimeout(async () => {
+      try {
+        const offer = await pc.createOffer({
           offerToReceiveVideo: true,
           offerToReceiveAudio: true
-        })
-        .then(offer => pc.setLocalDescription(offer))
-        .then(() => {
-          sendGroupVideoSignal({
-            signalType: 'offer',
-            to: memberId,
-            sdp: pc.localDescription
-          })
-        })
-        .catch(console.error)
+        });
+        await pc.setLocalDescription(offer);
+        sendGroupVideoSignal({
+          signalType: 'offer',
+          to: memberId,
+          sdp: pc.localDescription
+        });
+      } catch (error) {
+        console.error('创建offer失败:', error);
       }
-    }, Math.random() * 1000) // 随机延迟
+    }, 500 + Math.random() * 1000); // 随机延迟避免冲突
   }
-}
+};
 
 
 
@@ -1117,12 +1117,18 @@ const sendGroupVideoSignal = (data) => {
   store.ws.send(JSON.stringify(signal))
 }
 
-// 添加群成员
+// 添加成员时确保唯一性
 const addGroupMember = (memberId) => {
   if (!groupCallMembers.value.includes(memberId)) {
-    groupCallMembers.value.push(memberId)
+    groupCallMembers.value.push(memberId);
+    
+    // 按加入时间排序，用于确定offer创建方
+    groupCallMembers.value.sort((a, b) => {
+      return groupCallMembers.value.indexOf(a) - groupCallMembers.value.indexOf(b);
+    });
   }
-}
+};
+
 
 // 检查是否是发起者
 const isGroupCallInitiator = () => {
