@@ -4,24 +4,25 @@
       <div class="input-group">
         <input
           v-model="username"
-          placeholder="输入用户名"
+          placeholder="👁️用户名"
           class="input-field"
           @keyup.enter="login"
         />
         <input
           v-model="password"
           type="password"
-          placeholder="输入密码"
+          placeholder="👁️密码"
           class="input-field"
           @keyup.enter="login"
         />
       </div>
+      <br>
       <button @click="login" class="login-btn">进入聊天</button>
       <h1 class="title">🍊OO</h1>
       <h1 class="title t1">永不膨胀的安全聊天</h1>
       <br>
       <br>
-      <h5>orange orange chat v3.0.1</h5>
+      <h5>orange orange chat v5.0.1</h5>
 
     </div>
   </template>
@@ -98,7 +99,7 @@
   
 <style scoped>
   .login-container {
-    max-width: 84%;
+    max-width: 400px;
     margin: 50px auto;
     padding: 0rem;
     background: #FFF5E6;
@@ -118,37 +119,58 @@
   }
   
   .input-group {
-    margin-bottom: 2rem;
+    margin-bottom: 0 auto 2rem auto; 
+    gap: 20px;
+    
   }
   
   .input-field {
     width: 60%;
-    padding: 12px;
+    max-width: 120px;
+    padding: 6px;
     margin: 20px 0;
     border: 0px solid #FFD6B3;
-    border-radius: 30px;
-    font-size: 1rem;
+    border-radius: 70% 70% 50% 50%;  /* 使得上边形成弯曲的效果 */
+    font-size: 1rem;  /* 减小字体 */
+    color: #bbbbbb;  /* 更淡的字体颜色 */
     outline: none;
     transition: all 0.3s;
   }
-  
+  .input-field::placeholder {
+  color: #e7e3e3;  /* 更淡的颜色 */
+  font-size: 1rem;  /* 更小的字体 */
+}
+  .input-field:first-child {
+  margin-right: 20px; /* 给第一个输入框增加右边距 */
+}
   .input-field:focus {
     border-color: #FF6B35;
     box-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
   }
   
   .login-btn {
-    width: 60%;
-    padding: 12px;
-    background: #FF6B35;
-    color: white;
-    border: none;
-    border-radius: 30px;
-    font-size: 1.1rem;
-    cursor: pointer;
-    transition: all 0.3s;
-  }
+  width: 60%;
+  padding: 12px;
+  background: #FF6B35;
+  color: white;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.3s;
   
+  /* 上边缘弯曲 */
+  border-radius: 18% 18% 90% 50%;  /* 使得上边形成弯曲的效果 */
+  position: relative;
+  
+  /* 设置按钮高度 */
+  height: 50px;
+  line-height: 50px; /* 垂直居中 */
+}
+
+
+
+
+
   .login-btn:hover {
     background: #FF844B;
     transform: translateY(-2px);
