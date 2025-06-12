@@ -1,4 +1,5 @@
 <template>
+  <div class="page-container">
     <div class="login-container">
       <br>
       <div class="input-group">
@@ -25,7 +26,8 @@
       <h5>orange orange chat v5.0.1</h5>
 
     </div>
-  </template>
+  </div>
+</template>
   
   <script setup>
   import { ref } from 'vue'
@@ -98,19 +100,103 @@
   </script>
   
 <style scoped>
-  .login-container {
-  max-width: 400px;
+.login-container {
+  max-width: 460px;
+  min-width: 300px;
+  width: 60%;
   margin: 50px auto;
   padding: 0rem;
-  background: rgba(255, 245, 230, 0.8); /* 设置半透明的背景颜色 */
+  background: rgba(255, 245, 230, 0.2); /* 设置半透明的背景颜色 */
   border-radius: 58px;
   box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
   text-align: center;
 
   /* 背景模糊效果 */
-  backdrop-filter: blur(10px);  /* 设置背景模糊程度 */
-  -webkit-backdrop-filter: blur(10px); /* 为Safari浏览器设置 */
+  backdrop-filter: blur(15px);  /* 增强背景模糊效果 */
+  -webkit-backdrop-filter: blur(15px); /* 为Safari浏览器设置 */
+  
+  /* 添加渐变效果，模拟玻璃反光 */
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.3) 100%), rgba(255, 245, 230, 0.2);
+  
+  /* 添加边框模拟液态玻璃反射效果 */
+  border: 1px solid rgba(255, 255, 255, 0.2); 
+
+  /* 可选：增加光泽感的伪元素 */
+  position: relative;
+
+  /* 动画：玻璃反光丝滑特效 */
+  animation: borderGlow 3s ease-in-out infinite;
+}
+
+/* 光泽反射动画 */
+@keyframes borderGlow {
+  0% {
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
   }
+  50% {
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 8px rgba(255, 255, 255, 0.4);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
+  }
+}
+
+.login-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 30%;
+  background: rgba(255, 255, 255, 0.1);  /* 光泽反射效果 */
+  border-radius: 50%;
+  filter: blur(30px);
+  opacity: 0.2;
+
+  /* 顺时针光泽反射的动态路径 */
+  animation: clockwiseShine 4s infinite ease-in-out;
+}
+
+@keyframes clockwiseShine {
+  0% {
+    top: 0;
+    left: 0;
+    opacity: 0.2;
+    transform: rotate(0deg);
+  }
+  25% {
+    top: 0;
+    left: 50%;
+    opacity: 0.3;
+    transform: rotate(90deg);
+  }
+  50% {
+    top: 50%;
+    left: 50%;
+    opacity: 0.4;
+    transform: rotate(180deg);
+  }
+  75% {
+    top: 50%;
+    left: 100%;
+    opacity: 0.3;
+    transform: rotate(270deg);
+  }
+  100% {
+    top: 0;
+    left: 100%;
+    opacity: 0.2;
+    transform: rotate(360deg);
+  }
+}
+
+
+
+
+
   
   .title {
     color: #FF6B35;
@@ -185,16 +271,43 @@
     transform: translateY(0);
   }
 
-  /* 为整个页面设置背景图片 */
-body, html {
-  height: 100%; /* 确保背景覆盖整个页面 */
-  margin: 0; /* 去掉默认的外边距 */
-  padding: 0; /* 去掉默认的内边距 */
-  
-  background-image: url('./png/bk.jpg'); /* 设置背景图片 */
-  background-size: cover; /* 图片覆盖整个页面 */
-  background-position: center; /* 图片居中 */
-  background-repeat: no-repeat; /* 防止背景图片重复 */
+  .page-container {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* 静态图片背景 */
+  background-image: url('./png/bk.jpg');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  animation: moveAndZoom 15s infinite ease-in-out;
 }
+
+/* 定义上下移动和缩放的动画 */
+@keyframes moveAndZoom {
+  0% {
+    background-position: center top; /* 初始位置在顶部 */
+    transform: scale(1);             /* 初始缩放比例 */
+  }
+  25% {
+    background-position: center center; /* 移动到中心 */
+    transform: scale(1.05);             /* 略微放大 */
+  }
+  50% {
+    background-position: center bottom; /* 移动到底部 */
+    transform: scale(1);               /* 恢复到原始大小 */
+  }
+  75% {
+    background-position: center center; /* 回到中心 */
+    transform: scale(1.05);             /* 略微放大 */
+  }
+  100% {
+    background-position: center top;    /* 再次回到顶部 */
+    transform: scale(1);                /* 恢复到原始大小 */
+  }
+}
+
 
   </style>
