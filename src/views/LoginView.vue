@@ -99,13 +99,17 @@
   
 <style scoped>
   .login-container {
-    max-width: 400px;
-    margin: 50px auto;
-    padding: 0rem;
-    background: #FFF5E6;
-    border-radius: 58px;
-    box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
-    text-align: center;
+  max-width: 400px;
+  margin: 50px auto;
+  padding: 0rem;
+  background: rgba(255, 245, 230, 0.8); /* 设置半透明的背景颜色 */
+  border-radius: 58px;
+  box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
+  text-align: center;
+
+  /* 背景模糊效果 */
+  backdrop-filter: blur(10px);  /* 设置背景模糊程度 */
+  -webkit-backdrop-filter: blur(10px); /* 为Safari浏览器设置 */
   }
   
   .title {
@@ -180,4 +184,17 @@
   .login-btn:active {
     transform: translateY(0);
   }
+
+  /* 为整个页面设置背景图片 */
+body, html {
+  height: 100%; /* 确保背景覆盖整个页面 */
+  margin: 0; /* 去掉默认的外边距 */
+  padding: 0; /* 去掉默认的内边距 */
+  
+  background-image: url('./png/bk.jpg'); /* 设置背景图片 */
+  background-size: cover; /* 图片覆盖整个页面 */
+  background-position: center; /* 图片居中 */
+  background-repeat: no-repeat; /* 防止背景图片重复 */
+}
+
   </style>
