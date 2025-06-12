@@ -141,7 +141,7 @@
   
   .login-container {
   max-width: 460px;
-  min-width: 280px;
+  min-width: 250px;
   width: 58%;
   margin: 0; /* 删除原来的 margin 设置 */
   padding: 2rem; /* 可以根据需要调整 padding */
@@ -252,7 +252,7 @@
   
   .input-field {
     width: 60%;
-    max-width: 120px;
+    max-width: 100px;
     padding: 6px;
     margin: 20px 0;
     border: 0px solid #FFD6B3;
