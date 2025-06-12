@@ -2556,7 +2556,7 @@ width: 40%;
 height: 48px;
 border: 2px solid var(--border);
 border-radius: 28px;
-padding: 0 20px;
+padding: 0 12px;
 font-size: 16px;
 background: white;
 transition: all 0.2s;
@@ -2968,7 +2968,7 @@ z-index: -1;
   position: absolute;
   bottom: -5px;
   right: -5px;
-  background: #ff9800;
+  background: #b96f00;
   color: white;
   font-size: 10px;
   padding: 2px 5px;
@@ -3204,6 +3204,10 @@ z-index: -1;
 .tab-btn.active {
   color: white;
 }
+.tab-btn:focus,
+.tab-btn:active {
+  outline: none;
+}
 
 /* 液态玻璃滑块 */
 .slider {
@@ -3283,6 +3287,7 @@ z-index: -1;
   width: 100%;
   border-radius: 24px;
   margin-bottom: 8px;
+  gap: 8px;
 }
 
 /* 加入群聊按钮 */
