@@ -66,7 +66,7 @@
               class="modal-input"
             >
             <div class="action-buttons">
-              <button class="modal-btn confirm-btn" @click="addFriend" title="添加"></button>
+              <button class="modal-btn confirm-btn" @click="addFriend" title="添加"><img src="./png/right.png" alt="add"></button>
             </div>
           </div>
         </div>
@@ -74,7 +74,7 @@
         <!-- 群聊功能 -->
         <div v-if="activeTab === 'group'" class="group-section">
           <div class="create-group-row">
-            <button class="modal-btn create-group-btn" @click="createGroup" title="创建群聊">创建新群聊</button>
+            <button class="modal-btn create-group-btn" @click="createGroup" title="创建群聊"><img src="./png/group-creat.png" alt="creat">   创建新群聊</button>
           </div>
           <div class="input-row">
             <input 
@@ -82,7 +82,7 @@
               placeholder="输入群号"
               class="modal-input"
             >
-            <button class="modal-btn join-group-btn" @click="joinGroup" title="加入群聊"></button>
+            <button class="modal-btn join-group-btn" @click="joinGroup" title="加入群聊"><img src="./png/right.png" alt="join"></button>
           </div>
         </div>
       </div>
@@ -2870,7 +2870,7 @@ z-index: -1;
   background: #ff4d4d;
 }
 /* 新增图标样式 */
-.toggle-facing img, .screen-share img, .toggle-camera img, .toggle-mic img {
+.toggle-facing img, .screen-share img, .toggle-camera img, .toggle-mic img, .fullscreen-btn img {
   width: 30px;
   height: 30px;
 }
@@ -3224,8 +3224,9 @@ z-index: -1;
 .input-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 0px;
+  width: 100%;
 }
 
 /* 输入框样式 */
@@ -3276,34 +3277,17 @@ z-index: -1;
   background: #4CAF50;
 }
 
-.confirm-btn::after {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
-}
-
-/* 取消按钮 */
-.cancel-btn {
-  background: #f44336;
-}
-
-.cancel-btn::after {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E");
-}
-
 /* 创建群聊按钮 */
 .create-group-btn {
   background: rgb(186, 121, 0);
   width: 100%;
   border-radius: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 /* 加入群聊按钮 */
 .join-group-btn {
   background: orange;
-}
-
-.join-group-btn::after {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/%3E%3C/svg%3E");
 }
 
 /* 按钮悬停效果 */
@@ -3336,22 +3320,5 @@ z-index: -1;
   gap: 12px;
 }
 
-/* 移动端适配 */
-@media (max-width: 480px) {
-  .modal {
-    width: 90vw;
-    min-height: 50vh;
-  }
-  
-  .input-row {
-    flex-direction: column;
-  }
-  
-  .action-buttons {
-    width: 100%;
-    justify-content: space-between;
-    margin-top: 12px;
-  }
-}
 </style>
 
