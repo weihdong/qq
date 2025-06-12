@@ -197,46 +197,6 @@
       </div>
     </div>
     
-
-      <!-- 新增：视频呼叫状态模态框 -->
-    <div v-if="callStatus !== 'idle'" class="call-status-modal">
-      <!-- 呼出状态 -->
-      <div v-if="callStatus === 'calling'" class="calling-container">
-        <div class="call-avatar">{{ getUsernameById(currentCallPartner)[0]?.toUpperCase() }}</div>
-        <div class="call-info">正在呼叫 {{ getUsernameById(currentCallPartner) }}</div>
-        <div class="call-status">{{ callStatusText }}</div>
-        <div class="pulse-ring"></div>
-        <button class="end-call-btn" @click="endVideoCall">挂断</button>
-      </div>
-
-      <!-- 来电状态 -->
-      <div v-if="callStatus === 'ringing'" class="incoming-call-container">
-        <div class="caller-info">
-          <div class="caller-avatar">{{ getUsernameById(incomingCall.from)[0]?.toUpperCase() }}</div>
-          <div class="caller-name">{{ getUsernameById(incomingCall.from) }}</div>
-          <div class="call-type">视频通话请求...</div>
-        </div>
-        
-        <!-- 滑动接听区域 -->
-        <div class="slide-to-answer" @mousemove="handleSlideMove" @mouseup="handleSlideEnd" @touchmove="handleSlideMove" @touchend="handleSlideEnd">
-          <div class="slide-track">
-            <div 
-              class="slide-button" 
-              :style="{ transform: `translateX(${slidePosition}px)` }"
-              @mousedown="startSlide"
-              @touchstart="startSlide"
-            >
-              <img src="./png/answer-call.png" alt="接听">
-            </div>
-            <div class="slide-text">滑动接听</div>
-          </div>
-        </div>
-        
-        <button class="decline-call-btn" @click="rejectCall">
-          <img src="./png/end-call.png" alt="拒绝">
-        </button>
-      </div>
-    </div>
     <!-- 新增视频通话模态框 -->
     <div v-if="videoCallModal" class="video-modal">
       <div class="video-container" ref="fullscreenContainer">
@@ -346,8 +306,6 @@
         <button class="cancel-btn" @click="cancelRecording">完成</button>
       </div>
     </div>
-
-
   </div>
 </template>
 <script setup>
@@ -403,24 +361,6 @@ const groupFacingMode = ref('user')
 const fullscreenUserId = ref(null)
 const isGroupScreenSharing = ref(false)
 const groupScreenStream = ref(null)
-
-
-// 新增状态变量
-const callStatus = ref('idle'); // 'idle', 'calling', 'ringing', 'connected'
-const incomingCall = ref(null); // { from: userId, type: 'video' }
-const currentCallPartner = ref(null);
-const callStatusText = ref('等待接听...');
-const callTimeout = ref(null);
-
-// 滑动接听相关变量
-const isSliding = ref(false);
-const slideStartX = ref(0);
-const slidePosition = ref(0);
-const slideMaxDistance = ref(200);
-
-
-
-
 
 // 新增滑块相关变量
 const slider = ref(null)
@@ -1442,212 +1382,44 @@ const getGroupName = (groupId) => {
   const group = store.groups.find(g => g._id === groupId)
   return group ? group.name : '未知群组'
 }
-// 修改后的视频通话方法
+// 修改视频通话按钮点击事件
 const startVideoCall = async () => {
   if (!store.currentChat) {
-    alert('请先选择聊天对象');
-    return;
+    alert('请先选择聊天对象')
+    return
   }
-
-  // 群聊使用多人视频（不变）
+  
+  // 群聊使用多人视频
   if (store.currentChatType === 'group') {
-    startGroupVideoCall();
-    return;
+    startGroupVideoCall()
+    return
   }
-
-  // 设置状态为正在呼叫
-  callStatus.value = 'calling';
-  currentCallPartner.value = store.currentChat;
-
-  // 发送呼叫请求
-  sendVideoSignal({
-    signalType: 'call-request',
-    to: store.currentChat
-  });
-
-  // 设置超时（30秒无应答自动挂断）
-  callTimeout.value = setTimeout(() => {
-    if (callStatus.value === 'calling') {
-      endVideoCall();
-      alert('对方无应答');
-    }
-  }, 30000);
-};
-
-// 新增：处理视频信号（增加呼叫请求处理）
-const handleVideoSignal = async (signal) => {
-  // 处理呼叫请求
-  if (signal.signalType === 'call-request') {
-    // 如果当前没有通话
-    if (callStatus.value === 'idle') {
-      incomingCall.value = {
-        from: signal.from,
-        type: 'video'
-      };
-      callStatus.value = 'ringing';
-      
-      // 播放铃声
-      playRingtone();
-    } else {
-      // 如果正在通话中，则拒绝
-      sendVideoSignal({
-        signalType: 'reject-call',
-        to: signal.from
-      });
-    }
-    return;
-  }
-
-  // 处理接听
-  if (signal.signalType === 'accept-call') {
-    // 如果当前状态是calling（等待接听），则开始连接
-    if (callStatus.value === 'calling' && signal.from === currentCallPartner.value) {
-      callStatus.value = 'connected';
-      videoCallModal.value = true;
-      
-      // 清除超时定时器
-      clearTimeout(callTimeout.value);
-      
-      try {
-        // 初始化PeerConnection
-        createPeerConnection();
-        
-        // 获取媒体流 - 默认开启麦克风，关闭摄像头
-        const constraints = { 
-          audio: true,
-          video: false
-        };
-        
-        localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-          .catch(error => {
-            console.error('获取媒体设备失败:', error);
-            return navigator.mediaDevices.getUserMedia({ audio: true });
-          });
-        
-        // 更新状态变量
-        cameraEnabled.value = false;
-        micEnabled.value = true;
-        
-        // 添加轨道
-        localStream.value.getTracks().forEach(track => {
-          peerConnection.value.addTrack(track, localStream.value);
-        });
-        
-        // 显示本地视频
-        if (localVideo.value) {
-          localVideo.value.srcObject = localStream.value;
-          localVideo.value.muted = true;
-          
-          // 增强播放处理
-          const playWithRetry = () => {
-            localVideo.value.play().catch(e => {
-              console.warn('本地视频播放失败，重试...', e);
-              setTimeout(playWithRetry, 1000);
-            });
-          };
-          playWithRetry();
-        }
-        
-        // 创建offer
-        const offer = await peerConnection.value.createOffer({
-          offerToReceiveVideo: true,
-          offerToReceiveAudio: true
-        });
-        
-        await peerConnection.value.setLocalDescription(offer);
-        
-        // 发送offer
-        sendVideoSignal({
-          signalType: 'offer',
-          sdp: offer.sdp,
-          to: currentCallPartner.value
-        });
-        
-      } catch (error) {
-        console.error('启动视频通话失败:', error);
-        endVideoCall();
-      }
-    }
-    return;
-  }
-
-  // 处理拒绝
-  if (signal.signalType === 'reject-call') {
-    if (callStatus.value === 'calling') {
-      callStatus.value = 'idle';
-      currentCallPartner.value = null;
-      clearTimeout(callTimeout.value);
-      alert('对方已拒绝');
-    }
-    return;
-  }
-
-  // ... 其他原有信号处理保持不变 ...
-    // 处理answer
-    if (signal.signalType === 'answer' && peerConnection.value) {
-    try {
-      await peerConnection.value.setRemoteDescription(
-        new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
-      );
-    } catch (error) {
-      console.error('设置远程描述失败:', error);
-    }
-    return;
-  }
-  
-  // 处理candidate
-  if (signal.signalType === 'candidate' && peerConnection.value) {
-    try {
-      if (signal.candidate) {
-        await peerConnection.value.addIceCandidate(
-          new RTCIceCandidate(signal.candidate)
-        );
-      }
-    } catch (error) {
-      console.error('添加ICE候选失败:', error);
-    }
-  }
-};
-
-// 新增：接听来电
-const answerCall = async () => {
-  if (!incomingCall.value) return;
-  
-  // 发送接听信号
-  sendVideoSignal({
-    signalType: 'accept-call',
-    to: incomingCall.value.from
-  });
-  
-  // 更新状态
-  callStatus.value = 'connected';
-  videoCallModal.value = true;
-  currentCallPartner.value = incomingCall.value.from;
-  
-  // 停止铃声
-  stopRingtone();
   
   try {
-    // 初始化PeerConnection
-    createPeerConnection();
+    videoCallModal.value = true;
+    await nextTick();
     
-    // 获取媒体流 - 默认开启麦克风，关闭摄像头
+    // 1. 获取媒体流
     const constraints = { 
-      audio: true,
-      video: false
+      video: true,
+      audio: true
     };
     
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-      .catch(error => {
-        console.error('获取媒体设备失败:', error);
-        return navigator.mediaDevices.getUserMedia({ audio: true });
-      });
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints);
     
-    // 更新状态变量
+    // 2. 立即禁用所有轨道（核心修改）
+    localStream.value.getTracks().forEach(track => {
+      track.enabled = false; // 禁用摄像头和麦克风
+    });
+    
+    // 3. 更新状态变量
     cameraEnabled.value = false;
-    micEnabled.value = true;
+    micEnabled.value = false;
     
-    // 添加轨道
+    // 4. 继续后续流程
+    createPeerConnection();
+    
+    // 添加轨道（此时轨道已被禁用）
     localStream.value.getTracks().forEach(track => {
       peerConnection.value.addTrack(track, localStream.value);
     });
@@ -1656,95 +1428,32 @@ const answerCall = async () => {
     if (localVideo.value) {
       localVideo.value.srcObject = localStream.value;
       localVideo.value.muted = true;
-      
-      // 增强播放处理
-      const playWithRetry = () => {
-        localVideo.value.play().catch(e => {
-          console.warn('本地视频播放失败，重试...', e);
-          setTimeout(playWithRetry, 1000);
-        });
-      };
-      playWithRetry();
+      localVideo.value.play().catch(e => {
+        console.error('本地视频播放失败:', e);
+        document.body.click();
+        setTimeout(() => localVideo.value.play(), 500);
+      });
     }
     
-  } catch (error) {
-    console.error('接听通话失败:', error);
-    endVideoCall();
-  }
-  
-  // 清空呼入
-  incomingCall.value = null;
-};
-
-// 新增：拒绝来电
-const rejectCall = () => {
-  if (incomingCall.value) {
-    // 发送拒绝信号
-    sendVideoSignal({
-      signalType: 'reject-call',
-      to: incomingCall.value.from
+    // 创建offer
+    const offer = await peerConnection.value.createOffer({
+      offerToReceiveVideo: true,
+      offerToReceiveAudio: true
     });
     
-    // 停止铃声
-    stopRingtone();
+    await peerConnection.value.setLocalDescription(offer);
     
-    // 重置状态
-    incomingCall.value = null;
-    callStatus.value = 'idle';
+    // 发送offer
+    sendVideoSignal({
+      signalType: 'offer',
+      sdp: offer.sdp,
+      to: store.currentChat
+    });
+  } catch (error) {
+    console.error('启动视频通话失败:', error);
+    alert(`视频通话错误: ${error.message}`);
+    endVideoCall();
   }
-};
-
-// 新增：播放铃声
-const ringtone = ref(null);
-const playRingtone = () => {
-  if (!ringtone.value) {
-    ringtone.value = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-classic-alarm-995.mp3');
-    ringtone.value.loop = true;
-  }
-  ringtone.value.play().catch(e => console.log('铃声播放失败:', e));
-};
-
-// 新增：停止铃声
-const stopRingtone = () => {
-  if (ringtone.value) {
-    ringtone.value.pause();
-    ringtone.value.currentTime = 0;
-  }
-};
-
-// 滑动接听功能
-const startSlide = (e) => {
-  isSliding.value = true;
-  slideStartX.value = e.clientX || e.touches[0].clientX;
-};
-
-const handleSlideMove = (e) => {
-  if (!isSliding.value) return;
-  
-  const currentX = e.clientX || e.touches[0].clientX;
-  const deltaX = currentX - slideStartX.value;
-  
-  // 限制滑动范围
-  slidePosition.value = Math.max(0, Math.min(deltaX, slideMaxDistance.value));
-  
-  // 如果滑动到最右边，自动接听
-  if (slidePosition.value >= slideMaxDistance.value - 10) {
-    answerCall();
-    resetSlide();
-  }
-};
-
-const handleSlideEnd = () => {
-  if (isSliding.value) {
-    // 如果未滑到最右边，回弹
-    slidePosition.value = 0;
-    isSliding.value = false;
-  }
-};
-
-const resetSlide = () => {
-  slidePosition.value = 0;
-  isSliding.value = false;
 };
 
 // 修改 createPeerConnection 方法（修复轨道处理）
@@ -1862,18 +1571,106 @@ const handleVideoError = (type) => {
   })
 }
 
-
+// 处理收到的视频信号
+// 修改 handleVideoSignal 方法（修复远程流处理）
+const handleVideoSignal = async (signal) => {
+  console.log('收到视频信号:', signal);
+  
+  if (signal.signalType === 'end-call') {
+    console.log('收到结束通话信号');
+    endVideoCall();
+    return;
+  }
+  
+  // 处理通话请求（offer）
+  if (signal.signalType === 'offer') {
+    try {
+      videoCallModal.value = true;
+      await nextTick();
+      
+      // 结束现有通话（如果有）
+      if (peerConnection.value) endVideoCall();
+      
+      createPeerConnection();
+      
+      // 1. 获取本地媒体流
+      localStream.value = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+      
+      // 2. 立即禁用所有轨道（接收方也默认关闭）
+      localStream.value.getTracks().forEach(track => {
+        track.enabled = false; // 禁用摄像头和麦克风
+      });
+      
+      // 3. 更新状态变量
+      cameraEnabled.value = false;
+      micEnabled.value = false;
+      
+      // 添加本地轨道（禁用状态）
+      localStream.value.getTracks().forEach(track => {
+        peerConnection.value.addTrack(track, localStream.value);
+      });
+      
+      // 显示本地视频
+      if (localVideo.value) {
+        localVideo.value.srcObject = localStream.value;
+        localVideo.value.muted = true;
+        localVideo.value.play().catch(e => console.error('本地视频播放失败:', e));
+      }
+      
+      // 处理offer
+      await peerConnection.value.setRemoteDescription(
+        new RTCSessionDescription({ type: 'offer', sdp: signal.sdp })
+      );
+      
+      // 创建answer
+      const answer = await peerConnection.value.createAnswer();
+      await peerConnection.value.setLocalDescription(answer);
+      
+      // 发送answer
+      sendVideoSignal({
+        signalType: 'answer',
+        sdp: answer.sdp,
+        to: signal.from
+      });
+    } catch (error) {
+      console.error('接受视频通话失败:', error);
+      endVideoCall();
+    }
+    return;
+  }
+  
+  // 处理answer
+  if (signal.signalType === 'answer' && peerConnection.value) {
+    try {
+      await peerConnection.value.setRemoteDescription(
+        new RTCSessionDescription({ type: 'answer', sdp: signal.sdp })
+      );
+    } catch (error) {
+      console.error('设置远程描述失败:', error);
+    }
+    return;
+  }
+  
+  // 处理candidate
+  if (signal.signalType === 'candidate' && peerConnection.value) {
+    try {
+      if (signal.candidate) {
+        await peerConnection.value.addIceCandidate(
+          new RTCIceCandidate(signal.candidate)
+        );
+      }
+    } catch (error) {
+      console.error('添加ICE候选失败:', error);
+    }
+  }
+};
 // 修改 endVideoCall 方法（彻底清理资源）
 const endVideoCall = () => {
   console.log('结束视频通话');
-    // 发送结束信号
-  if (currentCallPartner.value && store.ws?.readyState === WebSocket.OPEN) {
-    store.ws.send(JSON.stringify({
-      type: 'video-signal',
-      signalType: 'end-call',
-      to: currentCallPartner.value
-    }));
-  }
+  
   // 防止重复调用
   if (!peerConnection.value && !localStream.value) return;
   
@@ -1928,12 +1725,6 @@ const endVideoCall = () => {
   
   videoCallModal.value = false;
   connectionState.value = '';
-    // 重置通话状态
-  callStatus.value = 'idle';
-  incomingCall.value = null;
-  currentCallPartner.value = null;
-  clearTimeout(callTimeout.value);
-  stopRingtone();
 };
 // 新增切换前置后置摄像头功能
 const toggleCameraFacing = async () => {
@@ -2594,11 +2385,6 @@ onMounted(async () => {
     alert('初始化失败，请刷新页面重试')
   }
 })
-// 在组件卸载时清理
-onBeforeUnmount(() => {
-  endVideoCall();
-  stopRingtone();
-});
 
 </script>
 
@@ -3567,169 +3353,5 @@ z-index: -1;
     margin-top: 12px;
   }
 }
-
-
-
-
-/* 新增：呼叫状态模态框样式 */
-.call-status-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.calling-container, .incoming-call-container {
-  background: #2c3e50;
-  border-radius: 20px;
-  padding: 30px;
-  text-align: center;
-  width: 300px;
-  color: white;
-}
-
-.call-avatar, .caller-avatar {
-  width: 120px;
-  height: 120px;
-  background: #3498db;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 48px;
-  margin: 0 auto 20px;
-  color: white;
-}
-
-.call-info, .caller-name {
-  font-size: 24px;
-  margin-bottom: 10px;
-}
-
-.call-type, .call-status {
-  font-size: 18px;
-  color: #bdc3c7;
-  margin-bottom: 30px;
-}
-
-.end-call-btn {
-  background: #e74c3c;
-  color: white;
-  border: none;
-  border-radius: 50px;
-  padding: 15px 30px;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 20px auto 0;
-}
-
-.end-call-btn img {
-  width: 24px;
-  height: 24px;
-  margin-right: 10px;
-}
-
-/* 新增：脉冲动画 */
-.pulse-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 200px;
-  height: 200px;
-  border: 4px solid #3498db;
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-  z-index: -1;
-}
-
-@keyframes pulse {
-  0% {
-    transform: translate(-50%, -50%) scale(0.8);
-    opacity: 0.7;
-  }
-  50% {
-    transform: translate(-50%, -50%) scale(1.2);
-    opacity: 0.3;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(0.8);
-    opacity: 0.7;
-  }
-}
-
-/* 新增：滑动接听区域 */
-.slide-to-answer {
-  margin: 30px 0;
-}
-
-.slide-track {
-  width: 280px;
-  height: 60px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 30px;
-  position: relative;
-  overflow: hidden;
-}
-
-.slide-button {
-  position: absolute;
-  left: 5px;
-  top: 5px;
-  width: 50px;
-  height: 50px;
-  background: #2ecc71;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  z-index: 2;
-  transition: transform 0.2s;
-}
-
-.slide-button img {
-  width: 30px;
-  height: 30px;
-}
-
-.slide-text {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: white;
-  font-size: 18px;
-  pointer-events: none;
-}
-
-/* 新增：拒绝按钮 */
-.decline-call-btn {
-  background: #e74c3c;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: none;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: 0 auto;
-  cursor: pointer;
-}
-
-.decline-call-btn img {
-  width: 30px;
-  height: 30px;
-}
 </style>
+
