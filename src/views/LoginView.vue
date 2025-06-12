@@ -112,7 +112,7 @@
     background-position: center center;
     background-repeat: no-repeat;
     animation: moveAndZoom 30s infinite ease-in-out; /* 更平滑的动画时长 */
-    z-index: -1; /* 使背景图片在所有内容后面 */
+  
   }
   
   /* 定义背景图片上下移动和缩放的动画 */
@@ -149,6 +149,7 @@
   border-radius: 58px;
   box-shadow: 0 4px 6px rgba(255, 107, 53, 0.1);
   text-align: center;
+  z-index: 10;
 
   /* 背景模糊效果 */
   backdrop-filter: blur(15px);  /* 增强背景模糊效果 */
@@ -195,6 +196,7 @@
     border-radius: 50%;
     filter: blur(30px);
     opacity: 0.2;
+    z-index: -1;
   
     /* 顺时针光泽反射的动态路径 */
     animation: clockwiseShine 4s infinite ease-in-out;
