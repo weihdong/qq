@@ -2053,7 +2053,7 @@ const getBaseURL = () => {
 
 const getWsURL = () => {
   return window.location.hostname.includes('085410.xyz') 
-    ? 'wss://web-production-5fc08.up.railway.app'
+    ? 'wss://qq-backend-1.onrender.com'
     : 'ws://localhost:3000'
 }
 
