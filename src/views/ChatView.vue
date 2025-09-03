@@ -2047,7 +2047,7 @@ const MAX_RECONNECT_ATTEMPTS = 5
 
 const getBaseURL = () => {
   return window.location.hostname.includes('085410.xyz') 
-    ? 'https://web-production-5fc08.up.railway.app'
+    ? 'https://qq-backend-1.onrender.com'
     : 'http://localhost:3000'
 }
 
